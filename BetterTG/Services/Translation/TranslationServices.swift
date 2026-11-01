@@ -75,11 +75,63 @@ enum TranslationServices {
         return String(c.prefix(2))
     }
 
-    // MARK: - DeepL
+    // MARK: - DeepL (multi-key rotation)
+
+    private static var deeplKeyCooldown: [String: Date] = [:]
+    private static let deeplKeyLock = NSLock()
+
+    private static func isDeepLKeyCooling(_ key: String) -> Bool {
+        deeplKeyLock.lock()
+        defer { deeplKeyLock.unlock() }
+        guard let until = deeplKeyCooldown[key] else { return false }
+        if until > Date() { return true }
+        deeplKeyCooldown[key] = nil
+        return false
+    }
+
+    private static func markDeepLKeyLimited(_ key: String, minutes: Double = 5) {
+        deeplKeyLock.lock()
+        deeplKeyCooldown[key] = Date().addingTimeInterval(minutes * 60)
+        deeplKeyLock.unlock()
+    }
 
     private static func deepl(text: String, target: String) async throws -> String {
-        let key = TranslationSettings.deeplAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { throw TranslationError.engineFailed(.deepl, "missing API key") }
+        let keys = TranslationSettings.deeplAPIKeys
+        guard !keys.isEmpty else { throw TranslationError.engineFailed(.deepl, "missing API key") }
+
+        var lastError: Error = TranslationError.engineFailed(.deepl, "no key available")
+        var attempted = 0
+        for key in keys {
+            if isDeepLKeyCooling(key) { continue }
+            attempted += 1
+            do {
+                return try await deeplOnce(text: text, target: target, key: key)
+            } catch let error as TranslationError {
+                lastError = error
+                switch error {
+                case .rateLimited:
+                    markDeepLKeyLimited(key)
+                    continue
+                case .engineFailed(_, let message):
+                    if message.contains("HTTP 403") || message.contains("HTTP 456")
+                        || message.contains("HTTP 401")
+                    {
+                        markDeepLKeyLimited(key, minutes: 30)
+                        continue
+                    }
+                    throw error
+                default:
+                    throw error
+                }
+            }
+        }
+        if attempted == 0 {
+            return try await deeplOnce(text: text, target: target, key: keys[0])
+        }
+        throw lastError
+    }
+
+    private static func deeplOnce(text: String, target: String, key: String) async throws -> String {
         let free = key.hasSuffix(":fx")
         let host = free ? "api-free.deepl.com" : "api.deepl.com"
         var request = URLRequest(url: URL(string: "https://\(host)/v2/translate")!)

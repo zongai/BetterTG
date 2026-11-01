@@ -2,7 +2,7 @@
 
 import UIKit
 
-/// Settings > Language > Auto-Translate (fork feature).
+/// BetterTG 扩展 → 自动翻译
 final class AutoTranslateSettingsViewController: SettingsListViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -10,40 +10,67 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         navigationItem.largeTitleDisplayMode = .never
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reload()
+    }
+
     override func makeSections() -> [SettingsSection] {
-        let engines = TranslationSettings.engineChain
-        let engineDetail = engines.map(\.displayName).joined(separator: " → ")
+        let chain = TranslationSettings.engineChain
+        let chainDetail = chain.map(\.displayName).joined(separator: " → ")
+        let keyCount = TranslationSettings.deeplAPIKeys.count
+
         return [
-            SettingsSection(header: nil, footer: nil, rows: [
-                SettingsRow(
-                    title: "自动翻译非目标语言",
-                    detail: "可见消息自动译为设定语言",
-                    style: .subtitle,
-                    accessory: .toggle(isOn: TranslationSettings.autoTranslateNonTarget, onChange: { [weak self] on in
-                        TranslationSettings.autoTranslateNonTarget = on
-                        self?.reload()
-                    }),
-                ),
-                SettingsRow(
-                    title: "目标语言",
-                    detail: TranslationSettings.targetLanguage,
-                    accessory: .disclosure,
-                    action: { [weak self] in self?.pickTargetLanguage() }
-                ),
-            ]),
             SettingsSection(
-                header: "引擎顺序（失败自动切换）",
-                footer: "Google / MyMemory 无需 Key；DeepL、Azure 需填写 API Key。",
+                header: nil,
+                footer: "开启后，可见消息若不是目标语言，将按下方引擎顺序自动翻译并显示在气泡中。",
                 rows: [
-                    SettingsRow(title: "当前链路", detail: engineDetail, style: .subtitle),
                     SettingsRow(
-                        title: "DeepL API Key",
-                        detail: TranslationSettings.deeplAPIKey.isEmpty ? "未设置" : "已设置",
+                        title: "自动翻译非目标语言",
+                        accessory: .toggle(isOn: TranslationSettings.autoTranslateNonTarget, onChange: { [weak self] on in
+                            TranslationSettings.autoTranslateNonTarget = on
+                            self?.reload()
+                        }),
+                    ),
+                    SettingsRow(
+                        title: "目标语言",
+                        detail: TranslationSettings.targetLanguage,
+                        accessory: .disclosure,
+                        action: { [weak self] in self?.pickTargetLanguage() }
+                    ),
+                ]
+            ),
+            SettingsSection(
+                header: "翻译源顺序",
+                footer: "按顺序尝试；失败或限流时自动切换到下一个。可拖动调整优先级。",
+                rows: [
+                    SettingsRow(
+                        title: "引擎顺序",
+                        detail: chainDetail,
+                        style: .subtitle,
                         accessory: .disclosure,
                         action: { [weak self] in
-                            self?.editKey(title: "DeepL API Key", current: TranslationSettings.deeplAPIKey) {
-                                TranslationSettings.deeplAPIKey = $0
-                            }
+                            self?.navigationController?.pushViewController(
+                                TranslationEngineOrderViewController(),
+                                animated: true
+                            )
+                        }
+                    ),
+                ]
+            ),
+            SettingsSection(
+                header: "API Keys",
+                footer: "DeepL 支持多个 Key：限流或失效时自动轮换。Google / MyMemory 无需 Key。",
+                rows: [
+                    SettingsRow(
+                        title: "DeepL Keys",
+                        detail: keyCount == 0 ? "未设置" : "\(keyCount) 个",
+                        accessory: .disclosure,
+                        action: { [weak self] in
+                            self?.navigationController?.pushViewController(
+                                DeepLAPIKeyManagerViewController(),
+                                animated: true
+                            )
                         }
                     ),
                     SettingsRow(
@@ -89,6 +116,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
             $0.text = current
             $0.autocapitalizationType = .none
             $0.autocorrectionType = .no
+            $0.isSecureTextEntry = title.lowercased().contains("key")
         }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
@@ -96,5 +124,276 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
             self?.reload()
         })
         present(alert, animated: true)
+    }
+}
+
+// MARK: - DeepLAPIKeyManagerViewController
+
+/// Manage multiple DeepL API keys (order = rotation priority).
+final class DeepLAPIKeyManagerViewController: UITableViewController {
+    private var keys: [String]
+
+    init() {
+        self.keys = TranslationSettings.deeplAPIKeys
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "DeepL Keys"
+        navigationItem.largeTitleDisplayMode = .never
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "key")
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
+            editButtonItem,
+        ]
+        updateEmptyHint()
+    }
+
+    private func persist() {
+        TranslationSettings.deeplAPIKeys = keys
+        updateEmptyHint()
+    }
+
+    private func updateEmptyHint() {
+        if keys.isEmpty {
+            let label = UILabel()
+            label.text = "尚未添加 DeepL Key\n点右上角 + 添加，可添加多个并拖动排序"
+            label.textAlignment = .center
+            label.numberOfLines = 0
+            label.textColor = .secondaryLabel
+            label.font = .preferredFont(forTextStyle: .body)
+            tableView.backgroundView = label
+        } else {
+            tableView.backgroundView = nil
+        }
+        navigationItem.leftBarButtonItem = keys.isEmpty
+            ? nil
+            : UIBarButtonItem(title: "清空", style: .plain, target: self, action: #selector(clearTapped))
+    }
+
+    private static func masked(_ key: String) -> String {
+        let t = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.count <= 8 { return String(repeating: "•", count: min(t.count, 6)) }
+        return String(t.prefix(4)) + "…" + String(t.suffix(4))
+    }
+
+    @objc private func addTapped() {
+        let alert = UIAlertController(
+            title: "添加 DeepL Key",
+            message: "Free 账号 Key 通常以 :fx 结尾。可一次粘贴多行。",
+            preferredStyle: .alert
+        )
+        alert.addTextField {
+            $0.placeholder = "DeepL-Auth-Key"
+            $0.autocapitalizationType = .none
+            $0.autocorrectionType = .no
+            $0.clearButtonMode = .whileEditing
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "添加", style: .default) { [weak self] _ in
+            guard let self else { return }
+            let raw = alert.textFields?.first?.text ?? ""
+            let parts = raw
+                .components(separatedBy: CharacterSet.whitespacesAndNewlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            var existing = Set(self.keys)
+            var added = [String]()
+            for p in parts where existing.insert(p).inserted {
+                added.append(p)
+            }
+            guard !added.isEmpty else { return }
+            let start = self.keys.count
+            self.keys.append(contentsOf: added)
+            self.persist()
+            self.tableView.insertRows(
+                at: (start ..< self.keys.count).map { IndexPath(row: $0, section: 0) },
+                with: .automatic
+            )
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func clearTapped() {
+        let alert = UIAlertController(title: "清空全部 Key？", message: nil, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "清空", style: .destructive) { [weak self] _ in
+            self?.keys.removeAll()
+            self?.persist()
+            self?.tableView.reloadData()
+            self?.setEditing(false, animated: true)
+        })
+        present(alert, animated: true)
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        keys.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        keys.isEmpty ? nil : "列表顺序即轮换优先顺序。限流时自动使用下一个 Key。"
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "key", for: indexPath)
+        var config = cell.defaultContentConfiguration()
+        let key = keys[indexPath.row]
+        config.text = Self.masked(key)
+        config.secondaryText = key.hasSuffix(":fx") ? "Free · 优先级 \(indexPath.row + 1)" : "Pro · 优先级 \(indexPath.row + 1)"
+        cell.contentConfiguration = config
+        cell.selectionStyle = .none
+        return cell
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, done in
+            guard let self else { done(false); return }
+            self.keys.remove(at: indexPath.row)
+            self.persist()
+            tableView.deleteRows(at: [indexPath], with: .automatic)
+            done(true)
+        }
+        return UISwipeActionsConfiguration(actions: [delete])
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        commit editingStyle: UITableViewCell.EditingStyle,
+        forRowAt indexPath: IndexPath
+    ) {
+        guard editingStyle == .delete else { return }
+        keys.remove(at: indexPath.row)
+        persist()
+        tableView.deleteRows(at: [indexPath], with: .automatic)
+    }
+
+    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
+
+    override func tableView(
+        _ tableView: UITableView,
+        moveRowAt sourceIndexPath: IndexPath,
+        to destinationIndexPath: IndexPath
+    ) {
+        let value = keys.remove(at: sourceIndexPath.row)
+        keys.insert(value, at: destinationIndexPath.row)
+        persist()
+        tableView.reloadData()
+    }
+}
+
+// MARK: - TranslationEngineOrderViewController
+
+/// Reorder translation engines; toggle inclusion via checkmark.
+final class TranslationEngineOrderViewController: UITableViewController {
+    /// Full ordered list: enabled engines first (user order), then disabled.
+    private var ordered: [TranslationEngine]
+    private var enabled: Set<TranslationEngine>
+
+    init() {
+        let chain = TranslationSettings.engineChain
+        var seen = Set<TranslationEngine>()
+        var list: [TranslationEngine] = []
+        for e in chain where seen.insert(e).inserted {
+            list.append(e)
+        }
+        for e in TranslationEngine.allCases where seen.insert(e).inserted {
+            list.append(e)
+        }
+        self.ordered = list
+        self.enabled = Set(chain.isEmpty ? TranslationEngine.allCases : chain)
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "翻译源顺序"
+        navigationItem.largeTitleDisplayMode = .never
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "engine")
+        navigationItem.rightBarButtonItem = editButtonItem
+        // Start in edit mode so reorder handles are visible.
+        setEditing(true, animated: false)
+    }
+
+    private func persist() {
+        let chain = ordered.filter { enabled.contains($0) }
+        TranslationSettings.engineChain = chain.isEmpty ? TranslationEngine.allCases : chain
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        ordered.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        "引擎优先级"
+    }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        "点选开关启用/禁用；拖动左侧手柄调整顺序。自动翻译按从上到下依次尝试。"
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "engine", for: indexPath)
+        let engine = ordered[indexPath.row]
+        var config = cell.defaultContentConfiguration()
+        config.text = engine.displayName
+        switch engine {
+        case .google, .mymemory:
+            config.secondaryText = "无需 Key"
+        case .deepl:
+            let n = TranslationSettings.deeplAPIKeys.count
+            config.secondaryText = n == 0 ? "需要 DeepL Key" : "\(n) 个 Key"
+        case .azure:
+            config.secondaryText = TranslationSettings.azureAPIKey.isEmpty ? "需要 Azure Key" : "已配置"
+        }
+        cell.contentConfiguration = config
+        cell.accessoryType = enabled.contains(engine) ? .checkmark : .none
+        cell.selectionStyle = .default
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let engine = ordered[indexPath.row]
+        if enabled.contains(engine) {
+            // Keep at least one engine enabled.
+            if enabled.count <= 1 { return }
+            enabled.remove(engine)
+        } else {
+            enabled.insert(engine)
+        }
+        persist()
+        tableView.reloadRows(at: [indexPath], with: .none)
+    }
+
+    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
+
+    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath)
+        -> UITableViewCell.EditingStyle
+    {
+        .none
+    }
+
+    override func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
+        false
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        moveRowAt sourceIndexPath: IndexPath,
+        to destinationIndexPath: IndexPath
+    ) {
+        let value = ordered.remove(at: sourceIndexPath.row)
+        ordered.insert(value, at: destinationIndexPath.row)
+        persist()
     }
 }

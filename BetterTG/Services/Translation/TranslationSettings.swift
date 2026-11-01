@@ -22,7 +22,7 @@ enum TranslationSettings {
         set { UserDefaults.standard.set(newValue, forKey: prefix + "targetLanguage") }
     }
 
-    /// Ordered engine chain; empty means default order.
+    /// Ordered engine chain used for failover. Empty → all engines in default order.
     static var engineChain: [TranslationEngine] {
         get {
             guard let raw = UserDefaults.standard.array(forKey: prefix + "engineChain") as? [String] else {
@@ -32,13 +32,53 @@ enum TranslationSettings {
             return parsed.isEmpty ? TranslationEngine.allCases : parsed
         }
         set {
-            UserDefaults.standard.set(newValue.map(\.rawValue), forKey: prefix + "engineChain")
+            // Dedupe while preserving order.
+            var seen = Set<TranslationEngine>()
+            var ordered: [TranslationEngine] = []
+            for e in newValue where seen.insert(e).inserted {
+                ordered.append(e)
+            }
+            UserDefaults.standard.set(ordered.map(\.rawValue), forKey: prefix + "engineChain")
         }
     }
 
+    /// Multiple DeepL auth keys, tried in order on rate-limit / failure.
+    static var deeplAPIKeys: [String] {
+        get {
+            if let arr = UserDefaults.standard.stringArray(forKey: prefix + "deeplAPIKeys") {
+                return normalizedKeys(arr)
+            }
+            // Migrate legacy single key.
+            let legacy = UserDefaults.standard.string(forKey: prefix + "deeplAPIKey") ?? ""
+            let trimmed = legacy.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return [] }
+            let keys = [trimmed]
+            UserDefaults.standard.set(keys, forKey: prefix + "deeplAPIKeys")
+            return keys
+        }
+        set {
+            let keys = normalizedKeys(newValue)
+            UserDefaults.standard.set(keys, forKey: prefix + "deeplAPIKeys")
+            // Keep legacy key in sync for any leftover readers.
+            UserDefaults.standard.set(keys.first ?? "", forKey: prefix + "deeplAPIKey")
+        }
+    }
+
+    /// Convenience: first key (legacy API).
     static var deeplAPIKey: String {
-        get { UserDefaults.standard.string(forKey: prefix + "deeplAPIKey") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: prefix + "deeplAPIKey") }
+        get { deeplAPIKeys.first ?? "" }
+        set {
+            var keys = deeplAPIKeys
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                if !keys.isEmpty { keys.removeFirst() }
+            } else if keys.isEmpty {
+                keys = [trimmed]
+            } else {
+                keys[0] = trimmed
+            }
+            deeplAPIKeys = keys
+        }
     }
 
     static var azureAPIKey: String {
@@ -49,5 +89,16 @@ enum TranslationSettings {
     static var azureRegion: String {
         get { UserDefaults.standard.string(forKey: prefix + "azureRegion") ?? "eastasia" }
         set { UserDefaults.standard.set(newValue, forKey: prefix + "azureRegion") }
+    }
+
+    private static func normalizedKeys(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in values {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, seen.insert(t).inserted else { continue }
+            result.append(t)
+        }
+        return result
     }
 }
