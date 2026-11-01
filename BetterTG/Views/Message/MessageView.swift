@@ -1465,7 +1465,6 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         guard let key = representedMessageKey,
               representedTranslatedText != nil
         else { return }
-        // Toggle per-message preference and refresh.
         _ = TranslationDisplayStore.toggle(chatID: key.chatID, messageID: key.messageID)
         if let translated = representedTranslatedText {
             refreshTranslationUI(translated: translated)
@@ -1499,8 +1498,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 showTranslation(translated, style: .translationOnly)
             }
         }
-        setNeedsLayout()
-        invalidateIntrinsicContentSize()
+        // 高度随原文/译文切换变化，需立即让列表重新测量，避免必须滚动才正常
+        requestMessageHeightUpdate()
     }
 
     private enum TranslationLabelStyle {
@@ -1556,7 +1555,32 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         translationLabel.isHidden = false
         translationLabel.accessibilityValue = text.isEmpty ? "显示译文" : text
         translationLabel.accessibilityHint = "点击切换原文与译文"
+    }
+
+    /// Force self-sizing cell to remeasure after translation visibility changes.
+    private func requestMessageHeightUpdate() {
+        bubbleContentNeedsMeasurement = true
         setNeedsLayout()
+        contentView.setNeedsLayout()
+        bubbleStack.setNeedsLayout()
+        invalidateIntrinsicContentSize()
+        layoutIfNeeded()
+
+        // Notify ChatView to preserve viewport while height settles.
+        onSelfSizingHeightChange?()
+
+        // Invalidate collection layout so preferredLayoutAttributesFitting runs without waiting for scroll.
+        var ancestor: UIView? = superview
+        while let view = ancestor {
+            if let collectionView = view as? UICollectionView {
+                UIView.performWithoutAnimation {
+                    collectionView.collectionViewLayout.invalidateLayout()
+                    collectionView.layoutIfNeeded()
+                }
+                break
+            }
+            ancestor = view.superview
+        }
     }
 
     private func configureViews() {
