@@ -254,6 +254,19 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     private let mediaView = MessageMediaView()
     private let structuredContentView = MessageStructuredContentView()
     private let textView = MessageTextContentView()
+
+    /// Fork: auto-translated body shown under the original text.
+    private let translationLabel: UILabel = {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.font = .systemFont(ofSize: 15)
+        label.textColor = .secondaryLabel
+        label.isHidden = true
+        return label
+    }()
+    private var translationObserver: NSObjectProtocol?
+    private var representedMessageKey: (chatID: Int64, messageID: Int64)?
+    private var representedSourceText: String?
     private let textSpoilers = MessageTextSpoilerStore()
     private var spoilerSubscriptions = Set<AnyCancellable>()
     private var refreshSpoilerAccessibility: (() -> Void)?
@@ -348,8 +361,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     private var bubbleContentViews: [UIView] {
         [
-            senderNameView, forwardView, replyView, mediaView, structuredContentView, textView, reactionView,
-            timestampLabel, commentFooterView,
+            senderNameView, forwardView, replyView, mediaView, structuredContentView, textView, translationLabel,
+            reactionView, timestampLabel, commentFooterView,
         ]
     }
 
@@ -373,6 +386,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        if let translationObserver {
+            NotificationCenter.default.removeObserver(translationObserver)
+        }
     }
 
     override func prepareForReuse() {
@@ -606,6 +625,10 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         forwardView.isHidden = true
         replyView.isHidden = true
         textView.isHidden = true
+        translationLabel.isHidden = true
+        translationLabel.attributedText = nil
+        representedMessageKey = nil
+        representedSourceText = nil
         mediaView.setHiddenIfChanged(true)
         structuredContentView.isHidden = true
         reactionView.isHidden = true
@@ -1044,9 +1067,17 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 spoilerState: textSpoilers.states[textSourceID],
                 expandedQuoteBlocks: message.expandedQuoteBlocks,
             )
+            applyTranslationDisplay(
+                chatID: message.message.chatId,
+                messageID: message.id,
+                sourceText: formatted.text,
+            )
         } else {
             textView.prepareForReuse()
             textView.isHidden = true
+            translationLabel.isHidden = true
+            translationLabel.text = nil
+            representedMessageKey = nil
         }
 
         let hasReactions = reactionView.configure(
@@ -1335,6 +1366,81 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         contentView.layer.removeAllAnimations()
         contentView.alpha = 1
         contentView.transform = Self.timelineContentTransform
+    }
+
+
+    /// Fork: show cached auto-translation under the message text; observe store updates for this cell.
+    private func applyTranslationDisplay(chatID: Int64, messageID: Int64, sourceText: String) {
+        representedMessageKey = (chatID, messageID)
+        representedSourceText = sourceText
+        if translationObserver == nil {
+            translationObserver = NotificationCenter.default.addObserver(
+                forName: TranslationMessageStore.didUpdateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let self,
+                      let info = note.userInfo,
+                      let c = info["chatID"] as? Int64,
+                      let m = info["messageID"] as? Int64,
+                      self.representedMessageKey?.chatID == c,
+                      self.representedMessageKey?.messageID == m,
+                      let source = self.representedSourceText
+                else { return }
+                if let translated = TranslationMessageStore.shared.translatedText(
+                    chatID: c,
+                    messageID: m,
+                    sourceText: source
+                ) {
+                    self.showTranslation(translated)
+                }
+            }
+        }
+
+        guard TranslationSettings.autoTranslateNonTarget else {
+            translationLabel.isHidden = true
+            translationLabel.attributedText = nil
+            return
+        }
+        if let translated = TranslationMessageStore.shared.translatedText(
+            chatID: chatID,
+            messageID: messageID,
+            sourceText: sourceText
+        ) {
+            showTranslation(translated)
+        } else {
+            translationLabel.isHidden = true
+            translationLabel.attributedText = nil
+            Task { @MainActor in
+                _ = await AutoTranslator.shared.translateIfNeeded(
+                    chatID: chatID,
+                    messageID: messageID,
+                    text: sourceText
+                )
+            }
+        }
+    }
+
+    private func showTranslation(_ text: String) {
+        let attr = NSMutableAttributedString()
+        attr.append(NSAttributedString(
+            string: "翻译\n",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: UIColor.tertiaryLabel,
+            ]
+        ))
+        attr.append(NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 15),
+                .foregroundColor: UIColor.secondaryLabel,
+            ]
+        ))
+        translationLabel.attributedText = attr
+        translationLabel.isHidden = false
+        translationLabel.accessibilityValue = text
+        setNeedsLayout()
     }
 
     private func configureViews() {

@@ -382,16 +382,7 @@ import UIKit
 
     /// Fork: kick off background translation for visible text messages when auto-translate is on.
     private static func requestAutoTranslations(for messages: [CustomMessage]) {
-        guard TranslationSettings.autoTranslateNonTarget else { return }
-        let slice = messages.prefix(40)
-        Task { @MainActor in
-            for message in slice {
-                let text = message.formattedText?.text ?? ""
-                guard !text.isEmpty else { continue }
-                let key = "\(message.id)"
-                _ = await AutoTranslator.shared.translateIfNeeded(messageKey: key, text: text)
-            }
-        }
+        AutoTranslator.shared.translateVisibleMessages(messages)
     }
 
     var recordingVideoTopicDemand: MessageTopic? {

@@ -1,5 +1,5 @@
 // AutoTranslator.swift
-// Message-level auto translation with cache and language skip.
+// Message-level auto translation: language skip, engine failover, attribute store.
 
 import Foundation
 import NaturalLanguage
@@ -8,20 +8,17 @@ import NaturalLanguage
 final class AutoTranslator {
     static let shared = AutoTranslator()
 
-    /// messageKey -> translated text
-    private var memoryCache: [String: String] = [:]
-    private let diskKey = "BetterTG.fork.translation.cache"
     private var inFlight: Set<String> = []
+    private let coordinator = TranslationCoordinator.shared
 
-    private init() {
-        if let data = UserDefaults.standard.dictionary(forKey: diskKey) as? [String: String] {
-            memoryCache = data
-        }
-    }
+    private init() {}
 
-    /// Returns cached or newly translated text. Nil when skipped or failed.
+    /// Translate a message body when auto-translate is on and the text is not already the target language.
+    /// Writes `TranslationMessageAttribute` on success.
+    @discardableResult
     func translateIfNeeded(
-        messageKey: String,
+        chatID: Int64,
+        messageID: Int64,
         text: String,
         knownSourceLanguage: String? = nil
     ) async -> String? {
@@ -30,22 +27,26 @@ final class AutoTranslator {
         guard !trimmed.isEmpty else { return nil }
 
         let target = TranslationSettings.targetLanguage.lowercased()
+        if let cached = TranslationMessageStore.shared.translatedText(
+            chatID: chatID,
+            messageID: messageID,
+            sourceText: trimmed
+        ) {
+            return cached
+        }
+
         let source = (knownSourceLanguage ?? detectLanguage(of: trimmed))?.lowercased()
         if let source, isSameLanguage(source, target) {
             return nil
         }
 
-        let cacheKey = "\(messageKey)|\(target)|\(trimmed.hashValue)"
-        if let hit = memoryCache[cacheKey] { return hit }
-        guard !inFlight.contains(cacheKey) else { return nil }
-        inFlight.insert(cacheKey)
-        defer { inFlight.remove(cacheKey) }
+        let flightKey = "\(chatID):\(messageID):\(target):\(trimmed.hashValue)"
+        guard !inFlight.contains(flightKey) else { return nil }
+        inFlight.insert(flightKey)
+        defer { inFlight.remove(flightKey) }
 
-        let chain = TranslationCoordinator.shared.effectiveChain(configured: TranslationSettings.engineChain)
-        guard !chain.isEmpty else { return nil }
-
+        let chain = coordinator.effectiveChain(configured: TranslationSettings.engineChain)
         for engine in chain {
-            // Skip engines that need keys when missing.
             if engine == .deepl, TranslationSettings.deeplAPIKey.isEmpty { continue }
             if engine == .azure, TranslationSettings.azureAPIKey.isEmpty { continue }
             do {
@@ -54,12 +55,19 @@ final class AutoTranslator {
                     targetLang: target,
                     engine: engine
                 )
-                TranslationCoordinator.shared.clearLimit(engine)
-                memoryCache[cacheKey] = result.text
-                persistCache()
-                return result.text
+                coordinator.clearLimit(engine)
+                let out = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !out.isEmpty, out != trimmed else { continue }
+                TranslationMessageStore.shared.set(
+                    chatID: chatID,
+                    messageID: messageID,
+                    sourceText: trimmed,
+                    translatedText: out,
+                    engine: engine
+                )
+                return out
             } catch TranslationError.rateLimited(let e) {
-                TranslationCoordinator.shared.markLimited(e)
+                coordinator.markLimited(e)
                 continue
             } catch {
                 continue
@@ -68,19 +76,21 @@ final class AutoTranslator {
         return nil
     }
 
-    func cachedTranslation(messageKey: String, text: String) -> String? {
-        let target = TranslationSettings.targetLanguage.lowercased()
-        let cacheKey = "\(messageKey)|\(target)|\(text.trimmingCharacters(in: .whitespacesAndNewlines).hashValue)"
-        return memoryCache[cacheKey]
-    }
-
-    private func persistCache() {
-        // Keep cache bounded.
-        if memoryCache.count > 500 {
-            let keys = Array(memoryCache.keys.prefix(memoryCache.count - 400))
-            for k in keys { memoryCache.removeValue(forKey: k) }
+    /// Batch helper for a slice of chat messages (used by ChatVM).
+    func translateVisibleMessages(_ messages: [CustomMessage]) {
+        guard TranslationSettings.autoTranslateNonTarget else { return }
+        let slice = Array(messages.prefix(50))
+        Task { @MainActor in
+            for message in slice {
+                let text = message.formattedText?.text ?? ""
+                guard !text.isEmpty else { continue }
+                _ = await translateIfNeeded(
+                    chatID: message.message.chatId,
+                    messageID: message.id,
+                    text: text
+                )
+            }
         }
-        UserDefaults.standard.set(memoryCache, forKey: diskKey)
     }
 
     private func detectLanguage(of text: String) -> String? {
@@ -88,11 +98,20 @@ final class AutoTranslator {
     }
 
     private func isSameLanguage(_ a: String, _ b: String) -> Bool {
-        let na = String(a.prefix(2)).lowercased()
-        let nb = String(b.prefix(2)).lowercased()
+        let na = normalize(a)
+        let nb = normalize(b)
         if na == nb { return true }
-        // zh / zh-CN / zh-TW
-        if na == "zh" && nb == "zh" { return true }
+        if na.hasPrefix("zh") && nb.hasPrefix("zh") { return true }
         return false
+    }
+
+    private func normalize(_ code: String) -> String {
+        var c = code.lowercased()
+        if c.hasSuffix("-raw") { c = String(c.dropLast(4)) }
+        if c.count > 3, c.contains("-") {
+            // keep zh-cn style for zh comparison via hasPrefix
+            return c
+        }
+        return String(c.prefix(2))
     }
 }
