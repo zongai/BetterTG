@@ -23,26 +23,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Select Xcode 26.3
         run: |
           echo "Available Xcode:"
           ls /Applications | grep -i xcode || true
-          if [ -d /Applications/Xcode-27.2.0.app ]; then
-            sudo xcode-select -s /Applications/Xcode-27.2.0.app
-          elif [ -d /Applications/Xcode_27.2.app ]; then
-            sudo xcode-select -s /Applications/Xcode_27.2.app
-          else
-            LATEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1 || true)
-            if [ -n "$LATEST" ]; then
-              echo "Falling back to $LATEST"
-              sudo xcode-select -s "$LATEST"
-            else
-              echo "No Xcode installation found"
-              exit 1
+          for candidate in \
+            /Applications/Xcode_26.3.0.app \
+            /Applications/Xcode_26.3.app \
+            /Applications/Xcode-26.3.0.app \
+            /Applications/Xcode-26.3.app
+          do
+            if [ -d "$candidate" ]; then
+              sudo xcode-select -s "$candidate"
+              echo "Selected: $candidate"
+              xcodebuild -version
+              exit 0
             fi
-          fi
-          echo "Selected: $(xcode-select -p)"
-          xcodebuild -version
+          done
+          echo "::error::Xcode 26.3 not found on runner"
+          exit 1
 
       - name: Install tools
         run: |

@@ -86,7 +86,7 @@ The people and chats in these screenshots are made up. [docs/screenshots](docs/s
 
 ## Building
 
-You need a Mac with Xcode 27.2 at `/Applications/Xcode-27.2.0.app` (pass `--xcode PATH` for another location), [XcodeGen](https://github.com/yonaskolb/XcodeGen), [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) and jq (`brew install xcodegen swiftformat jq`), and a Telegram `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org) → API development tools.
+You need a Mac with Xcode 26.3 at `/Applications/Xcode_26.3.0.app` (pass `--xcode PATH` for another location), [XcodeGen](https://github.com/yonaskolb/XcodeGen), [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) and jq (`brew install xcodegen swiftformat jq`), and a Telegram `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org) → API development tools.
 
 ```bash
 ./setup.sh               # asks for the api_id and api_hash
