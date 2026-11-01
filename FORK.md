@@ -38,7 +38,7 @@
 ## 构建与安装 IPA
 
 1. 仓库 Secrets：`TELEGRAM_API_ID`、`TELEGRAM_API_HASH`（[my.telegram.org](https://my.telegram.org)）
-2. Actions → **Build Unsigned IPA** → Run workflow（或推送到 `main`）
+2. Actions → **Build Unsigned IPA** → **Run workflow**（默认 push 不触发，仅手动构建）
 3. Artifact 下载 `BetterTG-unsigned-ipa`，或从 Release `build-N` 获取  
    命名：`BetterTG-{version}-{build}-build{run}.ipa`
 4. 使用 SideStore / TrollStore 等安装未签名包（需自签或相应工具）
