@@ -11,12 +11,12 @@
       "localizedDescription": "BetterTG fork with auto-translate, content filter, and multi-thread download.",
       "iconURL": "https://raw.githubusercontent.com/levochkaa/BetterTG/main/BetterTG/Assets.xcassets/AppIcon_README.imageset/bettertg256.png",
       "tintColor": "#2AABEE",
-      "file": "BetterTG-0.1.0-1-build9.ipa",
-      "downloadURL": "https://github.com/zongai/BetterTG/releases/download/build-9/BetterTG-0.1.0-1-build9.ipa",
+      "file": "BetterTG-0.1.0-1-build11.ipa",
+      "downloadURL": "https://github.com/zongai/BetterTG/releases/download/build-11/BetterTG-0.1.0-1-build11.ipa",
       "version": "0.1.0",
       "versionDate": "2026-11-01",
-      "versionDescription": "BetterTG 0.1.0 (1) unsigned CI build #9",
-      "size": 41693899,
+      "versionDescription": "BetterTG 0.1.0 (1) unsigned CI build #11",
+      "size": 41724109,
       "minOSVersion": "26.0"
     }
   ]
