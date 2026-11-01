@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Cloudflare Worker rebuild
+      - name: Trigger SideStore Worker rebuild
         env:
           REBUILD_TOKEN: ${{ secrets.SIDESTORE_REBUILD_TOKEN }}
         run: |
