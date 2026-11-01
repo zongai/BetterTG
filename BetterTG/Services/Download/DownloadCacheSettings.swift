@@ -63,7 +63,7 @@ enum DownloadCacheSettings {
     }
 }
 
-enum MultipartDownloadConfig {
+final class MultipartDownloadConfig {
     static let shared = MultipartDownloadConfig()
     private init() {}
 
