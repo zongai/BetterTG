@@ -300,6 +300,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     )
     private var bubbleContentNeedsMeasurement = true
     private var measuredCellWidth = CGFloat.zero
+    /// Groups / channels: bubbles use nearly the full row width (横向满屏).
+    private var usesFullWidthBubble = false
     private var centeredSpacerConstraint: NSLayoutConstraint?
     private var swipeReplyBindingID: UUID?
     private var onSwipeToReply: (() -> Void)?
@@ -872,10 +874,23 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         // ChatMessageItemLayoutConstants: past the timeline's 8 pt, the bubble's body sits 10 pt from the edge (3 pt
         // edge inset, the 1 pt stroke inset and 6 pt for the tail), an avatar at 8 pt with the body 48 pt in; a
         // bubble keeps 2⅓ pt above and below except where the same author's bubble continues.
+        // Fork: groups / channels stretch bubbles horizontally (近满屏), DMs keep Telegram's ~82% width.
+        switch chat.type {
+        case .group, .supergroup:
+            usesFullWidthBubble = !isCentered
+        case .user, .bot:
+            usesFullWidthBubble = false
+        }
         let showsAvatarColumn = showsProfileImage && !message.message.isOutgoing && !isCentered
-        rowLeadingConstraint.constant = isCentered ? 8 : (showsAvatarColumn ? 0 : 2)
-        rowTrailingConstraint.constant = isCentered ? -8 : -2
-        rowStack.setCustomSpacing(8, after: avatarView)
+        if usesFullWidthBubble {
+            rowLeadingConstraint.constant = showsAvatarColumn ? 0 : 4
+            rowTrailingConstraint.constant = -4
+            rowStack.setCustomSpacing(6, after: avatarView)
+        } else {
+            rowLeadingConstraint.constant = isCentered ? 8 : (showsAvatarColumn ? 0 : 2)
+            rowTrailingConstraint.constant = isCentered ? -8 : -2
+            rowStack.setCustomSpacing(8, after: avatarView)
+        }
         rowTopConstraint.constant = pendingBubbleMerge.withOlder ? 0 : 7 / 3
         rowBottomConstraint.constant = pendingBubbleMerge.withNewer ? 0 : -7 / 3
         configureSelection(
@@ -1906,17 +1921,25 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     }
 
     private func maximumTextWidth(for cellWidth: CGFloat) -> CGFloat {
+        if usesFullWidthBubble {
+            return max(1, maximumBubbleWidth(for: cellWidth) - 16)
+        }
         guard cellWidth > 0 else { return Utils.maxMessageContentWidth }
         return max(1, floor(cellWidth * 0.82) - 16)
     }
 
     /// The widest bubble, which is also the widest media: Telegram's constrained width for media sizing.
+    /// Groups use nearly the full row (avatar / share button still reserved when present).
     private func maximumBubbleWidth(for cellWidth: CGFloat) -> CGFloat {
         let width = cellWidth > 0 ? cellWidth : Utils.messageListWidth - 16
-        let maximum = floor(width * 0.82)
-        // The share button and its spacing come out of the row, beside an avatar too.
-        guard shareButtonKind != nil else { return maximum }
         let avatar: CGFloat = avatarView.superview === rowStack ? 35 : 0
+        let share: CGFloat = shareButtonKind != nil ? (30 + 8 + 12) : 0
+        if usesFullWidthBubble {
+            // 横向满屏：扣除头像、分享按钮与两侧少量边距后占满可用宽度
+            return max(1, floor(width - avatar - share - 8))
+        }
+        let maximum = floor(width * 0.82)
+        guard shareButtonKind != nil else { return maximum }
         return min(maximum, floor(width - avatar - 30 - 8 - 12))
     }
 }
