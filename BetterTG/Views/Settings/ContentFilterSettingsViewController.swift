@@ -149,7 +149,10 @@ final class KeywordListManagerViewController: UITableViewController {
     }
 
     private func persist() {
-        mode.items = items
+        switch mode {
+        case .blacklist: ContentFilterSettings.blacklist = items
+        case .whitelist: ContentFilterSettings.whitelist = items
+        }
         updateEmptyState()
         updateClearButton()
     }

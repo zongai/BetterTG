@@ -48,9 +48,9 @@ enum ContentFilter {
     static func shouldShowText(_ text: String) -> Bool {
         guard ContentFilterSettings.filterEnabled else { return true }
         let body = text.lowercased()
-        let white = ContentFilterSettings.whitelist.map(\.lowercased).filter { !$0.isEmpty }
+        let white = ContentFilterSettings.whitelist.map { $0.lowercased() }.filter { !$0.isEmpty }
         if white.contains(where: { body.contains($0) }) { return true }
-        let black = ContentFilterSettings.blacklist.map(\.lowercased).filter { !$0.isEmpty }
+        let black = ContentFilterSettings.blacklist.map { $0.lowercased() }.filter { !$0.isEmpty }
         if black.contains(where: { body.contains($0) }) { return false }
         return true
     }
