@@ -141,8 +141,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # On successful main builds only: publish Release first, then rewrite sidestore source.
+      - name: Create GitHub Release
+        if: success() && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: BetterTG ${{ steps.ipa.outputs.version }} (build ${{ github.run_number }})
+          body: |
+            Unsigned IPA for SideStore / TrollStore style install.
+            Version ${{ steps.ipa.outputs.version }} (${{ steps.ipa.outputs.build }}).
+            SideStore version: ${{ steps.ipa.outputs.version }}-build${{ github.run_number }}
+          files: .build/${{ steps.ipa.outputs.ipa_name }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Update sidestore-apps.json
-        if: github.ref == 'refs/heads/main'
+        if: success() && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           VERSION="${{ steps.ipa.outputs.version }}"
@@ -151,9 +168,7 @@ jobs:
           IPA_SIZE="${{ steps.ipa.outputs.ipa_size }}"
           RUN="${{ github.run_number }}"
           DATE=$(date -u +"%Y-%m-%d")
-          # SideStore version includes CI build number so each Release is distinct
           DISPLAY_VERSION="${VERSION}-build${RUN}"
-          # Tag/asset URL must match Create GitHub Release (tag_name: build-${RUN})
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/build-${RUN}/${IPA_NAME}"
           SOURCE_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/sidestore-apps.json"
           jq \
@@ -176,7 +191,6 @@ jobs:
           mv sidestore-apps.json.tmp sidestore-apps.json
           echo "=== sidestore-apps.json (must match Release asset) ==="
           cat sidestore-apps.json
-          # Sanity: version + file name aligned with IPA
           test "$(jq -r '.apps[0].version' sidestore-apps.json)" = "$DISPLAY_VERSION"
           test "$(jq -r '.apps[0].file' sidestore-apps.json)" = "$IPA_NAME"
           test "$(jq -r '.apps[0].downloadURL' sidestore-apps.json)" = "$DOWNLOAD_URL"
@@ -184,29 +198,17 @@ jobs:
           echo "sidestore fields verified against build outputs"
 
       - name: Commit sidestore-apps.json
-        if: github.ref == 'refs/heads/main'
+        if: success() && github.ref == 'refs/heads/main'
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Avoid non-fast-forward if another push landed during the build
+          git pull --rebase origin main || true
           git add sidestore-apps.json
           if git diff --staged --quiet; then
             echo "No sidestore changes"
           else
             git commit -m "chore(ci): update sidestore-apps.json for build ${{ github.run_number }}"
-            git push
+            git push origin HEAD:main
           fi
-
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: BetterTG ${{ steps.ipa.outputs.version }} (build ${{ github.run_number }})
-          body: |
-            Unsigned IPA for SideStore / TrollStore style install.
-            Version ${{ steps.ipa.outputs.version }} (${{ steps.ipa.outputs.build }}).
-          files: .build/${{ steps.ipa.outputs.ipa_name }}
-          draft: false
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
