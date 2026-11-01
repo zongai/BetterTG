@@ -56,6 +56,9 @@ final class MessageShareButton: UIControl {
     /// ChatMessageBubbleItemNode's `needsShareButton`: an incoming broadcast post, a forward from a channel, a game or
     /// a link preview, unless its content is protected; in Saved Messages a forward that knows its source goes there
     /// instead. Sending, scheduled and service messages have none.
+    ///
+    /// Fork: 频道/群组旁的「转发」圆钮已关闭，气泡可横向占满；转发仍可通过长按菜单使用。
+    /// 收藏夹里的「跳转原文」仍保留。
     static func kind(for message: CustomMessage, chat: CustomChat) -> Kind? {
         let source = message.message
         guard source.sendingState == nil, source.schedulingState == nil,
@@ -64,17 +67,8 @@ final class MessageShareButton: UIControl {
             guard let origin = source.forwardInfo?.source, origin.chatId != 0, origin.messageId != 0 else { return nil }
             return .navigate(.message(chatID: origin.chatId, messageID: origin.messageId, quote: nil))
         }
-        guard !source.isOutgoing, source.canBeSaved else { return nil }
-        if case .supergroup(let group) = chat.type, group.isChannel { return .share }
-        if case .messageOriginChannel = source.forwardInfo?.origin { return .share }
-        switch source.content {
-        case .messageGame:
-            return .share
-        case .messageText(let text) where text.linkPreview != nil:
-            return .share
-        default:
-            return nil
-        }
+        // 不再在气泡旁显示 share 按钮
+        return nil
     }
 
     func configure(kind: Kind) {

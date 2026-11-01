@@ -887,7 +887,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         }
         let showsAvatarColumn = showsProfileImage && !message.message.isOutgoing && !isCentered
         if usesFullWidthBubble {
-            // 更紧的左右边距，减少频道/群组留白
+            // 无旁路转发钮后进一步贴边，气泡更宽
             rowLeadingConstraint.constant = showsAvatarColumn ? 0 : 2
             rowTrailingConstraint.constant = -2
             rowStack.setCustomSpacing(4, after: avatarView)
@@ -2058,14 +2058,13 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     }
 
     /// The widest bubble, which is also the widest media: Telegram's constrained width for media sizing.
-    /// Groups use nearly the full row (avatar / share button still reserved when present).
+    /// Groups/channels use nearly the full row (avatar reserved when present; share button disabled in fork).
     private func maximumBubbleWidth(for cellWidth: CGFloat) -> CGFloat {
         let width = cellWidth > 0 ? cellWidth : Utils.messageListWidth - 16
         let avatar: CGFloat = avatarView.superview === rowStack ? 32 : 0
-        // 分享按钮实际约 30，间距收紧为 4
         let share: CGFloat = shareButtonKind != nil ? (30 + 4) : 0
         if usesFullWidthBubble {
-            // 横向满屏：仅扣除头像/分享与最小边距
+            // 无转发钮时几乎贴满屏幕两侧
             return max(1, floor(width - avatar - share - 4))
         }
         let maximum = floor(width * 0.82)
