@@ -132,7 +132,7 @@ final class KeywordListManagerViewController: UITableViewController {
         tableView.keyboardDismissMode = .onDrag
 
         navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
+            UIBarButtonItem(title: "添加", style: .plain, target: self, action: #selector(addTapped)),
             editButtonItem,
         ]
 

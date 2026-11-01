@@ -147,7 +147,7 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "key")
         navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
+            UIBarButtonItem(title: "添加", style: .plain, target: self, action: #selector(addTapped)),
             editButtonItem,
         ]
         updateEmptyHint()
