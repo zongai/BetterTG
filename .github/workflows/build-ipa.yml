@@ -151,12 +151,14 @@ jobs:
           IPA_SIZE="${{ steps.ipa.outputs.ipa_size }}"
           RUN="${{ github.run_number }}"
           DATE=$(date -u +"%Y-%m-%d")
+          # SideStore version includes CI build number so each Release is distinct
+          DISPLAY_VERSION="${VERSION}-build${RUN}"
           # Tag/asset URL must match Create GitHub Release (tag_name: build-${RUN})
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/build-${RUN}/${IPA_NAME}"
           SOURCE_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/sidestore-apps.json"
           jq \
             --arg file "$IPA_NAME" \
-            --arg version "$VERSION" \
+            --arg version "$DISPLAY_VERSION" \
             --arg date "$DATE" \
             --arg desc "BetterTG ${VERSION} (${BUILD}) unsigned CI build #${RUN}" \
             --arg downloadURL "$DOWNLOAD_URL" \
@@ -175,7 +177,7 @@ jobs:
           echo "=== sidestore-apps.json (must match Release asset) ==="
           cat sidestore-apps.json
           # Sanity: version + file name aligned with IPA
-          test "$(jq -r '.apps[0].version' sidestore-apps.json)" = "$VERSION"
+          test "$(jq -r '.apps[0].version' sidestore-apps.json)" = "$DISPLAY_VERSION"
           test "$(jq -r '.apps[0].file' sidestore-apps.json)" = "$IPA_NAME"
           test "$(jq -r '.apps[0].downloadURL' sidestore-apps.json)" = "$DOWNLOAD_URL"
           test "$(jq -r '.apps[0].size' sidestore-apps.json)" = "$IPA_SIZE"
