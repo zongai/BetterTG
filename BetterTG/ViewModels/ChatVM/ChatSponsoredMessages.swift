@@ -203,6 +203,8 @@ struct ChatSponsoredMessage {
     /// fully downloaded before the ad shows, so an ad whose media can't be downloaded is left out.
     func activate() {
         guard !isActivated, isCurrent else { return }
+        // Fork: ContentFilter hideAds
+        if ContentFilterSettings.hideAds { return }
         isActivated = true
         let client = client
         let chatID = chatID

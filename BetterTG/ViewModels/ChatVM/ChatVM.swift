@@ -376,6 +376,21 @@ import UIKit
             refreshAllMessagesForumTopicsIfNeeded()
             refreshDeliveryStates()
             messagesDidChange.send()
+            Self.requestAutoTranslations(for: messages)
+        }
+    }
+
+    /// Fork: kick off background translation for visible text messages when auto-translate is on.
+    private static func requestAutoTranslations(for messages: [CustomMessage]) {
+        guard TranslationSettings.autoTranslateNonTarget else { return }
+        let slice = messages.prefix(40)
+        Task { @MainActor in
+            for message in slice {
+                let text = message.formattedText?.text ?? ""
+                guard !text.isEmpty else { continue }
+                let key = "\(message.id)"
+                _ = await AutoTranslator.shared.translateIfNeeded(messageKey: key, text: text)
+            }
         }
     }
 
@@ -1534,7 +1549,7 @@ import UIKit
             seedComposerRestoration(restoration)
         }
         if let history {
-            self.messages = history.makeMessages()
+            self.messages = Self.applyingContentFilter(history.makeMessages())
             self.oldestHistoryMessageID = history.oldestHistoryMessageID
             self.hasMoreMessages = history.hasMoreMessages
             self.historyReachedStart = !history.hasMoreMessages
@@ -7833,10 +7848,21 @@ import UIKit
             representative.album = combined
             result[index] = representative
         }
-        return result.sorted { lhs, rhs in
+        let sorted = result.sorted { lhs, rhs in
             let left = lhs.newestSourceMessage
             let right = rhs.newestSourceMessage
             return left.date == right.date ? left.id > right.id : left.date > right.date
+        }
+        return Self.applyingContentFilter(sorted)
+    }
+
+    /// Fork: drop text messages matching the content-filter blacklist (whitelist wins).
+    private static func applyingContentFilter(_ messages: [CustomMessage]) -> [CustomMessage] {
+        guard ContentFilterSettings.filterEnabled else { return messages }
+        return messages.filter { message in
+            let text = message.formattedText?.text ?? ""
+            if text.isEmpty { return true }
+            return ContentFilter.shouldShowText(text)
         }
     }
 

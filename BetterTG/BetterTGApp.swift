@@ -295,6 +295,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillEnterForeground(_ scene: UIScene) {
         log("Lifecycle callback: SceneDelegate.sceneWillEnterForeground")
         if let windowScene = scene as? UIWindowScene { AppPasscode.shared.sceneWillEnterForeground(windowScene) }
+        DownloadCacheSettings.applyOnForeground()
         logPendingRichNotificationDiagnostics()
         TDLib.shared.resumeAfterNotificationService()
     }

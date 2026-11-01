@@ -77,7 +77,8 @@ TelegramNavigationSearchProvider {
 
     override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int {
         guard isTranslateSection(section) else { return visibleLanguages.count }
-        return MessageTranslation.showsTranslateButton ? 2 : 1
+        // Show Translate toggle + optional Do Not Translate + fork Auto-Translate entry.
+        return MessageTranslation.showsTranslateButton ? 3 : 2
     }
 
     override func tableView(_: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -96,10 +97,22 @@ TelegramNavigationSearchProvider {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "LanguageCell", for: indexPath)
-        if isTranslateSection(indexPath.section), indexPath.row == 1 {
+        if isTranslateSection(indexPath.section), indexPath.row == 1, MessageTranslation.showsTranslateButton {
             var configuration = UIListContentConfiguration.valueCell()
             configuration.text = L10n.telegram("Localization.DoNotTranslate")
             configuration.secondaryText = Self.doNotTranslateValue
+            cell.contentConfiguration = configuration
+            cell.accessoryView = nil
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            return cell
+        }
+        if isTranslateSection(indexPath.section),
+           (MessageTranslation.showsTranslateButton && indexPath.row == 2)
+            || (!MessageTranslation.showsTranslateButton && indexPath.row == 1) {
+            var configuration = UIListContentConfiguration.valueCell()
+            configuration.text = "自动翻译"
+            configuration.secondaryText = TranslationSettings.autoTranslateNonTarget ? "开" : "关"
             cell.contentConfiguration = configuration
             cell.accessoryView = nil
             cell.accessoryType = .disclosureIndicator
@@ -150,11 +163,17 @@ TelegramNavigationSearchProvider {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if isTranslateSection(indexPath.section), indexPath.row == 1 {
+        if isTranslateSection(indexPath.section), indexPath.row == 1, MessageTranslation.showsTranslateButton {
             navigationController?.pushViewController(
                 TranslationLanguagesViewController(mode: .doNotTranslate),
                 animated: true,
             )
+            return
+        }
+        if isTranslateSection(indexPath.section),
+           (MessageTranslation.showsTranslateButton && indexPath.row == 2)
+            || (!MessageTranslation.showsTranslateButton && indexPath.row == 1) {
+            navigationController?.pushViewController(AutoTranslateSettingsViewController(), animated: true)
             return
         }
         guard !isTranslateSection(indexPath.section),

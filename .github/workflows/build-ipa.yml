@@ -11,12 +11,12 @@ on:
       - '**.md'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     name: Build unsigned IPA
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 120
 
     steps:
@@ -47,7 +47,6 @@ jobs:
         run: |
           brew install xcodegen swiftformat jq
           xcodegen --version
-          swiftformat --version
 
       - name: Configure project
         env:
@@ -56,7 +55,6 @@ jobs:
         run: |
           if [ -z "${TELEGRAM_API_ID:-}" ] || [ -z "${TELEGRAM_API_HASH:-}" ]; then
             echo "::error::Add repository secrets TELEGRAM_API_ID and TELEGRAM_API_HASH"
-            echo "Obtain them at https://my.telegram.org → API development tools"
             exit 1
           fi
           ./setup.sh \
@@ -67,8 +65,6 @@ jobs:
 
       - name: Patch build.sh for CI generic device destination
         run: |
-          # build.sh defaults to Simulator when not given --device.
-          # For an unsigned device IPA we force generic/platform=iOS.
           python3 - <<'PY'
           from pathlib import Path
           p = Path("script/build.sh")
@@ -103,27 +99,22 @@ jobs:
           CI_FORCE_DEVICE_BUILD: "1"
         run: |
           set -euo pipefail
-          # --no-code-signing produces an unsigned product; --release for distribution-like binary
           ./build.sh build --no-code-signing --release --full-output 2>&1 | tee build.log
-          # Locate the product
           APP=$(find .build -path '*/Release-iphoneos/BetterTG.app' -type d | head -1 || true)
           if [ -z "$APP" ]; then
             APP=$(find .build -name 'BetterTG.app' -type d | head -1 || true)
           fi
           if [ -z "$APP" ] || [ ! -d "$APP" ]; then
             echo "::error::BetterTG.app not found"
-            find .build -type d -name '*.app' 2>/dev/null || true
             tail -80 build.log
             exit 1
           fi
-          echo "Found app: $APP"
           echo "APP=$APP" >> "$GITHUB_ENV"
-          ls -la "$APP"
-          # Basic sanity: should be arm64 (device), not simulator
           file "$APP/BetterTG" || true
           lipo -info "$APP/BetterTG" 2>/dev/null || true
 
       - name: Package unsigned IPA
+        id: ipa
         run: |
           set -euo pipefail
           OUT=".build/ipa"
@@ -133,20 +124,73 @@ jobs:
 
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || echo "0.1.0")
           BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" 2>/dev/null || echo "1")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          IPA_NAME="BetterTG-${VERSION}-${BUILD}-${SHORT_SHA}-unsigned.ipa"
+          RUN="${GITHUB_RUN_NUMBER}"
+          # User-facing name pattern (BetterTG, not Telegram — this is the BetterTG fork)
+          IPA_NAME="BetterTG-${VERSION}-${BUILD}-build${RUN}.ipa"
 
           (cd "$OUT" && zip -r -y "../${IPA_NAME}" Payload)
           ls -lh ".build/${IPA_NAME}"
           cp ".build/${IPA_NAME}" "BetterTG-unsigned.ipa"
-          echo "IPA_NAME=${IPA_NAME}" >> "$GITHUB_ENV"
+          echo "ipa_name=${IPA_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload IPA
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: BetterTG-unsigned-ipa
           path: |
-            .build/*-unsigned.ipa
+            .build/*-build*.ipa
             BetterTG-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+      - name: Update sidestore-apps.json
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION="${{ steps.ipa.outputs.version }}"
+          BUILD="${{ steps.ipa.outputs.build }}"
+          IPA_NAME="${{ steps.ipa.outputs.ipa_name }}"
+          DATE=$(date -u +"%Y-%m-%d")
+          # Relative file name for SideStore source consumers
+          jq \
+            --arg file "$IPA_NAME" \
+            --arg version "$VERSION" \
+            --arg date "$DATE" \
+            --arg desc "BetterTG ${VERSION} (${BUILD}) unsigned CI build #${{ github.run_number }}" \
+            '
+            .apps[0].file = $file |
+            .apps[0].version = $version |
+            .apps[0].versionDate = $date |
+            .apps[0].versionDescription = $desc
+            ' sidestore-apps.json > sidestore-apps.json.tmp
+          mv sidestore-apps.json.tmp sidestore-apps.json
+          cat sidestore-apps.json
+
+      - name: Commit sidestore-apps.json
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sidestore-apps.json
+          if git diff --staged --quiet; then
+            echo "No sidestore changes"
+          else
+            git commit -m "chore(ci): update sidestore-apps.json for build ${{ github.run_number }}"
+            git push
+          fi
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: BetterTG ${{ steps.ipa.outputs.version }} (build ${{ github.run_number }})
+          body: |
+            Unsigned IPA for SideStore / TrollStore style install.
+            Version ${{ steps.ipa.outputs.version }} (${{ steps.ipa.outputs.build }}).
+          files: .build/${{ steps.ipa.outputs.ipa_name }}
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

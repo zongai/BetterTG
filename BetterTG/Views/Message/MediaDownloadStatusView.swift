@@ -192,11 +192,20 @@ final class MediaDownloadStatusView: UIControl {
         guard file.id == fileID, TDLib.shared.activeUpdateSource == source else { return }
         if file.local.isDownloadingCompleted, !file.local.path.isEmpty {
             updates = nil
+            DownloadSpeedTracker.shared.clear(fileID: fileID)
             status?.hide()
             onComplete(file)
         } else if file.local.isDownloadingActive {
             let total = max(file.size, file.expectedSize)
-            status?.showProgress(total > 0 ? CGFloat(file.local.downloadedSize) / CGFloat(total) : 0)
+            let received = file.local.downloadedSize
+            DownloadSpeedTracker.shared.update(fileID: fileID, received: received)
+            let speed = DownloadSpeedTracker.shared.speedBps(fileID: fileID)
+            status?.showProgress(total > 0 ? CGFloat(received) / CGFloat(total) : 0)
+            status?.accessibilityLabel = DownloadSpeedTracker.progressText(
+                received: received,
+                total: total,
+                speedBps: speed
+            )
         } else if status?.isDownloading != true {
             status?.showDownload()
         }

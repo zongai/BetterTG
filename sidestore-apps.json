@@ -1,0 +1,21 @@
+{
+  "name": "BetterTG",
+  "identifier": "com.zongai.BetterTG.source",
+  "sourceURL": "https://github.com/zongai/BetterTG",
+  "apps": [
+    {
+      "file": "BetterTG-0.1.0-1-build0.ipa",
+      "bundleIdentifier": "com.zongai.BetterTG",
+      "name": "BetterTG",
+      "developerName": "zongai",
+      "subtitle": "Open-source Telegram client for iPhone",
+      "localizedDescription": "BetterTG fork with auto-translate, content filter, and multi-thread download.",
+      "iconURL": "https://raw.githubusercontent.com/levochkaa/BetterTG/main/BetterTG/Assets.xcassets/AppIcon_README.imageset/bettertg256.png",
+      "tintColor": "#2AABEE",
+      "version": "0.1.0",
+      "versionDate": "2026-11-01",
+      "versionDescription": "Initial fork CI build placeholder",
+      "minOSVersion": "26.0"
+    }
+  ]
+}
