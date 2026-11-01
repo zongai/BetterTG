@@ -46,35 +46,6 @@ final class DataAndStorageViewController: SettingsListViewController {
                 self?.navigationController?.pushViewController(NetworkUsageViewController(), animated: true)
             },
         ]), autoDownloadSection(), SettingsSection(
-            header: "BetterTG 扩展",
-            footer: "消息级自动翻译、内容过滤与多线程下载。",
-            rows: [
-                SettingsRow(
-                    title: "下载与缓存",
-                    detail: DownloadCacheSettings.multiThreadDownload
-                        ? "多线程 \(DownloadCacheSettings.parallelParts) 分片"
-                        : "单线程",
-                    accessory: .disclosure,
-                    action: { [weak self] in
-                        self?.navigationController?.pushViewController(
-                            DownloadCacheSettingsViewController(),
-                            animated: true
-                        )
-                    }
-                ),
-                SettingsRow(
-                    title: "内容过滤",
-                    detail: ContentFilterSettings.hideAds || ContentFilterSettings.filterEnabled ? "已启用" : "关闭",
-                    accessory: .disclosure,
-                    action: { [weak self] in
-                        self?.navigationController?.pushViewController(
-                            ContentFilterSettingsViewController(),
-                            animated: true
-                        )
-                    }
-                ),
-            ]
-        ), SettingsSection(
             header: L10n.telegram("ChatSettings.Other").uppercased(),
             footer: L10n.telegram("Settings.RaiseToListenInfo"),
             rows: [
