@@ -143,6 +143,7 @@ final class SettingsViewController: UITableViewController {
         case .app(let botUserID):
             configureApp(cell, configuration: configuration, botUserID: botUserID)
         case .appearance,
+             .autoTranslate,
              .chatFolders,
              .dataAndStorage,
              .devices,
@@ -188,6 +189,8 @@ final class SettingsViewController: UITableViewController {
             navigationController?.pushViewController(AppearanceViewController(), animated: true)
         case .language:
             navigationController?.pushViewController(LanguageSelectionViewController(), animated: true)
+        case .autoTranslate:
+            navigationController?.pushViewController(AutoTranslateSettingsViewController(), animated: true)
         case .powerSaving:
             navigationController?.pushViewController(PowerSavingViewController(), animated: true)
         case .profile:
@@ -249,7 +252,7 @@ final class SettingsViewController: UITableViewController {
             let accountRows: [Row] = TDLib.shared.activeAccountID == nil
                 ? []
                 : [.notifications, .privacy, .dataAndStorage]
-            return accountRows + [.appearance, .powerSaving, .language]
+            return accountRows + [.appearance, .powerSaving, .language, .autoTranslate]
         case .support:
             return TDLib.shared.activeAccountID == nil ? [] : [.support, .faq, .tips]
         case .media:
@@ -488,6 +491,7 @@ private extension SettingsViewController {
         case appearance
         case powerSaving
         case language
+        case autoTranslate
         case support
         case faq
         case tips
@@ -535,6 +539,8 @@ private extension SettingsViewController {
                 L10n.telegram("Settings.PowerSaving")
             case .language:
                 L10n.telegram("Settings.AppLanguage")
+            case .autoTranslate:
+                "自动翻译"
             case .support:
                 L10n.telegram("Settings.Support")
             case .faq:
@@ -566,6 +572,8 @@ private extension SettingsViewController {
                 L10n.telegram(EnergyUsage.shared.isPowerSavingOn ? "Settings.PowerSavingOn" : "Settings.PowerSavingOff")
             case .language:
                 AppLocalization.shared.currentLanguage.nativeName
+            case .autoTranslate:
+                TranslationSettings.autoTranslateNonTarget ? "开" : "关"
             case .animatedMedia:
                 L10n.betterTG("Settings.AnimatedMediaFormats")
             case .version:
@@ -595,6 +603,7 @@ private extension SettingsViewController {
         var showsValue: Bool {
             switch self {
             case .appearance,
+                 .autoTranslate,
                  .devices,
                  .language,
                  .powerSaving: true
@@ -617,6 +626,7 @@ private extension SettingsViewController {
             case .dataAndStorage: "externaldrive.fill"
             case .appearance: "paintpalette.fill"
             case .language: "globe"
+            case .autoTranslate: "character.book.closed.fill"
             case .powerSaving: "battery.50percent"
             case .support: "bubble.left.and.text.bubble.right.fill"
             case .faq: "questionmark.circle.fill"
@@ -637,6 +647,7 @@ private extension SettingsViewController {
                  .addTestServerAccount,
                  .app,
                  .appearance,
+                 .autoTranslate,
                  .language,
                  .profile,
                  .savedMessages,
