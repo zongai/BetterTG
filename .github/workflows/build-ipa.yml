@@ -124,10 +124,12 @@ jobs:
 
           (cd "$OUT" && zip -r -y "../${IPA_NAME}" Payload)
           ls -lh ".build/${IPA_NAME}"
+          IPA_SIZE=$(stat -f%z ".build/${IPA_NAME}" 2>/dev/null || stat -c%s ".build/${IPA_NAME}")
           cp ".build/${IPA_NAME}" "BetterTG-unsigned.ipa"
           echo "ipa_name=${IPA_NAME}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "ipa_size=${IPA_SIZE}" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -142,24 +144,42 @@ jobs:
       - name: Update sidestore-apps.json
         if: github.ref == 'refs/heads/main'
         run: |
+          set -euo pipefail
           VERSION="${{ steps.ipa.outputs.version }}"
           BUILD="${{ steps.ipa.outputs.build }}"
           IPA_NAME="${{ steps.ipa.outputs.ipa_name }}"
+          IPA_SIZE="${{ steps.ipa.outputs.ipa_size }}"
+          RUN="${{ github.run_number }}"
           DATE=$(date -u +"%Y-%m-%d")
-          # Relative file name for SideStore source consumers
+          # Tag/asset URL must match Create GitHub Release (tag_name: build-${RUN})
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/build-${RUN}/${IPA_NAME}"
+          SOURCE_URL="https://raw.githubusercontent.com/${{ github.repository }}/main/sidestore-apps.json"
           jq \
             --arg file "$IPA_NAME" \
             --arg version "$VERSION" \
             --arg date "$DATE" \
-            --arg desc "BetterTG ${VERSION} (${BUILD}) unsigned CI build #${{ github.run_number }}" \
+            --arg desc "BetterTG ${VERSION} (${BUILD}) unsigned CI build #${RUN}" \
+            --arg downloadURL "$DOWNLOAD_URL" \
+            --arg sourceURL "$SOURCE_URL" \
+            --argjson size "$IPA_SIZE" \
             '
+            .sourceURL = $sourceURL |
             .apps[0].file = $file |
+            .apps[0].downloadURL = $downloadURL |
             .apps[0].version = $version |
             .apps[0].versionDate = $date |
-            .apps[0].versionDescription = $desc
+            .apps[0].versionDescription = $desc |
+            .apps[0].size = $size
             ' sidestore-apps.json > sidestore-apps.json.tmp
           mv sidestore-apps.json.tmp sidestore-apps.json
+          echo "=== sidestore-apps.json (must match Release asset) ==="
           cat sidestore-apps.json
+          # Sanity: version + file name aligned with IPA
+          test "$(jq -r '.apps[0].version' sidestore-apps.json)" = "$VERSION"
+          test "$(jq -r '.apps[0].file' sidestore-apps.json)" = "$IPA_NAME"
+          test "$(jq -r '.apps[0].downloadURL' sidestore-apps.json)" = "$DOWNLOAD_URL"
+          test "$(jq -r '.apps[0].size' sidestore-apps.json)" = "$IPA_SIZE"
+          echo "sidestore fields verified against build outputs"
 
       - name: Commit sidestore-apps.json
         if: github.ref == 'refs/heads/main'
