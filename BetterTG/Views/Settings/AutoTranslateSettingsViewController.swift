@@ -60,7 +60,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
             ),
             SettingsSection(
                 header: "API Keys",
-                footer: "DeepL 支持多个 Key：限流或失效时自动轮换。Google / MyMemory 无需 Key。",
+                footer: "DeepL 支持多个 Key：限流或失效时自动轮换。Google / Bing / MyMemory 无需 Key。",
                 rows: [
                     SettingsRow(
                         title: "DeepL Keys",
@@ -362,7 +362,7 @@ final class TranslationEngineOrderViewController: UITableViewController {
         var config = cell.defaultContentConfiguration()
         config.text = engine.displayName
         switch engine {
-        case .google, .mymemory:
+        case .google, .bing, .mymemory:
             config.secondaryText = "无需 Key"
         case .deepl:
             let n = TranslationSettings.deeplAPIKeys.count

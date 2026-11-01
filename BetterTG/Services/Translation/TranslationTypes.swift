@@ -5,6 +5,7 @@ import Foundation
 
 enum TranslationEngine: String, CaseIterable, Codable, Sendable {
     case google
+    case bing
     case deepl
     case azure
     case mymemory
@@ -12,6 +13,7 @@ enum TranslationEngine: String, CaseIterable, Codable, Sendable {
     var displayName: String {
         switch self {
         case .google: "Google"
+        case .bing: "Bing"
         case .deepl: "DeepL"
         case .azure: "Azure"
         case .mymemory: "MyMemory"
