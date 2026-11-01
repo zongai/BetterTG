@@ -4,7 +4,7 @@
   "sourceURL": "https://github.com/zongai/BetterTG",
   "apps": [
     {
-      "file": "BetterTG-0.1.0-1-build0.ipa",
+      "file": "BetterTG-0.1.0-1-build9.ipa",
       "bundleIdentifier": "com.zongai.BetterTG",
       "name": "BetterTG",
       "developerName": "zongai",
@@ -14,7 +14,7 @@
       "tintColor": "#2AABEE",
       "version": "0.1.0",
       "versionDate": "2026-11-01",
-      "versionDescription": "Initial fork CI build placeholder",
+      "versionDescription": "BetterTG 0.1.0 (1) unsigned CI build #9",
       "minOSVersion": "26.0"
     }
   ]
