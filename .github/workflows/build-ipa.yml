@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -198,6 +199,7 @@ jobs:
           echo "sidestore fields verified against build outputs"
 
       - name: Commit sidestore-apps.json
+        id: sidestore_commit
         if: success() && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
@@ -208,7 +210,26 @@ jobs:
           git add sidestore-apps.json
           if git diff --staged --quiet; then
             echo "No sidestore changes"
+            echo "updated=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(ci): update sidestore-apps.json for build ${{ github.run_number }}"
             git push origin HEAD:main
+            echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # GITHUB_TOKEN 的 push 不会级联触发其他 workflow，因此在 sidestore 回写成功后显式 dispatch
+      - name: Trigger rebuild-sidestore.yml
+        if: success() && github.ref == 'refs/heads/main' && steps.sidestore_commit.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching Rebuild SideStore Source workflow…"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rebuild-sidestore.yml/dispatches" \
+            -d '{"ref":"main"}'
+          echo
+          echo "rebuild-sidestore.yml dispatched"

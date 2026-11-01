@@ -1,21 +1,33 @@
 name: Rebuild SideStore Source
 
+# 1) 手动推送/修改 sidestore-apps.json 时自动跑
+# 2) Build IPA 成功回写 sidestore 后由 build-ipa 显式 dispatch（避免 GITHUB_TOKEN push 不级联）
+# 3) 可在 Actions 里手动 Run workflow
 on:
   push:
     paths:
       - "sidestore-apps.json"
+  workflow_dispatch:
 
 jobs:
   rebuild:
     runs-on: ubuntu-latest
-
     steps:
       - name: Trigger SideStore Worker rebuild
         env:
           REBUILD_TOKEN: ${{ secrets.SIDESTORE_REBUILD_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ -z "${REBUILD_TOKEN:-}" ]; then
+            echo "::error::Missing secret SIDESTORE_REBUILD_TOKEN"
+            echo "Add it under Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "Calling SideStore admin rebuild…"
           curl --fail-with-body \
             -X POST \
             -H "Authorization: Bearer ${REBUILD_TOKEN}" \
             -H "Content-Type: application/json" \
             https://sidestore.zongai.mom/admin/rebuild
+          echo
+          echo "SideStore rebuild requested successfully"
