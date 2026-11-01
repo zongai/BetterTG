@@ -6507,11 +6507,17 @@ import UIKit
         sendErrorMessage = nil
     }
 
-    /// The read state the chat opened with, from TDLib's current chat; the whole chat only, as threads and topics
-    /// keep their own.
+    /// The read state the chat opened with. Whole-chat routes use the chat's inbox cursor; forum topics use
+    /// the topic's. Threads keep their own (not handled here).
     private func loadUnreadDivider() {
-        guard !previewing, location.messageThreadID == nil, location.forumTopicID == nil,
-              unreadDividerAfterMessageID == nil else { return }
+        guard !previewing, location.messageThreadID == nil, unreadDividerAfterMessageID == nil else { return }
+        if let topic = forumTopic {
+            if topic.unreadCount > 0, topic.lastReadInboxMessageId > 0 {
+                unreadDividerAfterMessageID = topic.lastReadInboxMessageId
+            }
+            return
+        }
+        guard location.forumTopicID == nil else { return }
         let client = client
         let chatID = chatID
         Task { [weak self] in

@@ -660,10 +660,22 @@ final class ChatViewController: UIViewController, UICollectionViewDelegate, UICo
             client: tdlib.activeClient,
         )
         if let pendingForward { chatVM.beginForward(pendingForward) }
+        // Telegram-style continue reading for groups / channels / supergroups / topics:
+        // open at lastReadInboxMessageId when there are unreads and no explicit target.
+        // Do not jump to the latest message. Private chats keep existing behavior.
+        let resolvedTarget: Int64? = {
+            if let targetMessageID { return targetMessageID }
+            guard presentationMode == .full, messageThread == nil else { return nil }
+            if let topic = forumTopic {
+                guard topic.unreadCount > 0, topic.lastReadInboxMessageId > 0 else { return nil }
+                return topic.lastReadInboxMessageId
+            }
+            return customChat.continueReadingMessageID
+        }()
         self.init(
             chatVM: chatVM,
             presentationMode: presentationMode,
-            targetMessageID: targetMessageID,
+            targetMessageID: resolvedTarget,
             targetQuote: targetQuote,
             tdlib: tdlib,
         )

@@ -226,3 +226,24 @@ import TDLibKit
             }
     }
 }
+
+// MARK: - Continue reading (Telegram-style)
+
+extension CustomChat {
+    /// Whether this chat is a group, supergroup, or channel (not a private/bot DM).
+    var isGroupOrChannel: Bool {
+        switch type {
+        case .group, .supergroup: true
+        case .user, .bot: false
+        }
+    }
+
+    /// Anchor message for opening a group/channel with unreads: the last inbox message already
+    /// acknowledged on the server (`lastReadInboxMessageId`). The Unread Messages divider is drawn
+    /// after this id. Returns nil when there is nothing to resume (no unreads / private chat).
+    var continueReadingMessageID: Int64? {
+        guard isGroupOrChannel, unreadCount > 0 else { return nil }
+        let id = chat.lastReadInboxMessageId
+        return id > 0 ? id : nil
+    }
+}
