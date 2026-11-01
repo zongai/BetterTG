@@ -153,6 +153,8 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         title = "DeepL Keys"
         navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "key")
+        // 始终可排序，避免再占一个「编辑」按钮把标题挤成 “D…”
+        setEditing(true, animated: false)
         updateEmptyHint()
         refreshBarButtons()
     }
@@ -177,14 +179,18 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         }
     }
 
-    /// Keep back button free: put add / edit / clear on the trailing side only.
+    /// 右侧最多两个图标（添加 / 清空），去掉「编辑」以免标题被挤成 “D…”。
     private func refreshBarButtons() {
-        var trailing: [UIBarButtonItem] = [
-            UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(addTapped)),
-            editButtonItem,
+        var items: [UIBarButtonItem] = [
+            UIBarButtonItem(
+                image: UIImage(systemName: "plus"),
+                style: .plain,
+                target: self,
+                action: #selector(addTapped)
+            ),
         ]
         if !keys.isEmpty {
-            trailing.append(
+            items.append(
                 UIBarButtonItem(
                     image: UIImage(systemName: "trash"),
                     style: .plain,
@@ -193,14 +199,20 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
                 )
             )
         }
-        navigationItem.rightBarButtonItems = trailing
+        for item in items {
+            item.tintColor = .label
+        }
+        navigationItem.rightBarButtonItems = items
         navigationItem.leftBarButtonItem = nil
     }
 
     private static func masked(_ key: String) -> String {
         let t = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.count <= 8 { return String(repeating: "•", count: min(t.count, 6)) }
-        return String(t.prefix(4)) + "…" + String(t.suffix(4))
+        if t.count <= 12 {
+            return t
+        }
+        // 显示更多字符，避免满屏都是 “0023…e:fx” 难辨认
+        return String(t.prefix(8)) + "…" + String(t.suffix(6))
     }
 
     @objc private func addTapped() {
@@ -247,7 +259,7 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
             self?.keys.removeAll()
             self?.persist()
             self?.tableView.reloadData()
-            self?.setEditing(false, animated: true)
+            self?.setEditing(true, animated: false)
         })
         present(alert, animated: true)
     }
@@ -265,10 +277,29 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         var config = cell.defaultContentConfiguration()
         let key = keys[indexPath.row]
         config.text = Self.masked(key)
-        config.secondaryText = key.hasSuffix(":fx") ? "Free · 优先级 \(indexPath.row + 1)" : "Pro · 优先级 \(indexPath.row + 1)"
+        config.textProperties.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+        config.secondaryText = key.hasSuffix(":fx")
+            ? "Free · 优先级 \(indexPath.row + 1)"
+            : "Pro · 优先级 \(indexPath.row + 1)"
         cell.contentConfiguration = config
         cell.selectionStyle = .none
+        cell.showsReorderControl = true
         return cell
+    }
+
+    // 始终处于编辑态时隐藏每行左侧红色删除圆，仅保留右侧拖动手柄；删除用左滑。
+    override func tableView(
+        _ tableView: UITableView,
+        editingStyleForRowAt indexPath: IndexPath
+    ) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        shouldIndentWhileEditingRowAt indexPath: IndexPath
+    ) -> Bool {
+        false
     }
 
     override func tableView(
@@ -341,8 +372,9 @@ final class TranslationEngineOrderViewController: UITableViewController {
         title = "翻译源顺序"
         navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "engine")
-        navigationItem.rightBarButtonItem = editButtonItem
-        // Start in edit mode so reorder handles are visible.
+        // 不使用 editButtonItem：在部分系统上会显示成蓝色实心圆。
+        // 始终可拖动排序；点选行启用/禁用引擎。
+        navigationItem.rightBarButtonItem = nil
         setEditing(true, animated: false)
     }
 
@@ -360,7 +392,7 @@ final class TranslationEngineOrderViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "点选开关启用/禁用；拖动左侧手柄调整顺序。自动翻译按从上到下依次尝试。"
+        "点选行启用/禁用；拖动手柄调整顺序。自动翻译按从上到下依次尝试。"
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -380,7 +412,22 @@ final class TranslationEngineOrderViewController: UITableViewController {
         cell.contentConfiguration = config
         cell.accessoryType = enabled.contains(engine) ? .checkmark : .none
         cell.selectionStyle = .default
+        cell.showsReorderControl = true
         return cell
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        editingStyleForRowAt indexPath: IndexPath
+    ) -> UITableViewCell.EditingStyle {
+        .none
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        shouldIndentWhileEditingRowAt indexPath: IndexPath
+    ) -> Bool {
+        false
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
