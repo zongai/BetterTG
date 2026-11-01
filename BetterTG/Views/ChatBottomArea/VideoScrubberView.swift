@@ -449,9 +449,9 @@ final class VideoScrubberView: UIView {
         let width = playheadView.bounds.width
         var x = floor(playheadCenterX(for: value, zoomedIn: zoomedIn)) - width / 2
         // The cover picker's handle isn't held against a trim it doesn't show.
-        if allowsTrimming, trimStart > Self.valueEpsilon, abs(value - trimStart) < 0.01 {
+        if allowsTrimming, trimStart > Self.valueEpsilon, Swift.abs(value - trimStart) < 0.01 {
             x = trimView.frame.minX + normalRect.minX
-        } else if allowsTrimming, abs(value - trimEnd) < 0.01 {
+        } else if allowsTrimming, Swift.abs(value - trimEnd) < 0.01 {
             x = trimView.frame.maxX - normalRect.minX - width
         }
         playheadView.frame.origin = CGPoint(x: x, y: -4)
@@ -661,8 +661,8 @@ final class VideoScrubberView: UIView {
         }
         var pivotIndex = 0
         var minimalInterval = Double.greatestFiniteMagnitude
-        for (index, time) in summaryTimes.enumerated() where abs(time - zoomPivotPosition) < minimalInterval {
-            minimalInterval = abs(time - zoomPivotPosition)
+        for (index, time) in summaryTimes.enumerated() where Swift.abs(time - zoomPivotPosition) < minimalInterval {
+            minimalInterval = Swift.abs(time - zoomPivotPosition)
             pivotIndex = index
         }
         zoomedPivotIndex = pivotIndex
@@ -990,9 +990,9 @@ final class VideoScrubberView: UIView {
             playheadView.center.x = centerX
             var position = position(forPlayheadCenterX: centerX)
             if allowsTrimming {
-                if abs(centerX - minPosition) < .ulpOfOne {
+                if Swift.abs(centerX - minPosition) < .ulpOfOne {
                     position = trimStart
-                } else if abs(centerX - maxPosition) < .ulpOfOne {
+                } else if Swift.abs(centerX - maxPosition) < .ulpOfOne {
                     position = trimEnd
                 }
             }

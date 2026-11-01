@@ -202,7 +202,7 @@ enum StoryMoreMenu {
 
     /// The speed's name in speedList: Normal at 1x.
     static func speedTitle(_ rate: Double) -> String {
-        if abs(rate - 1) < 0.01 { return L10n.telegram("PlaybackSpeed.Normal") }
+        if Swift.abs(rate - 1) < 0.01 { return L10n.telegram("PlaybackSpeed.Normal") }
         return speedText(rate)
     }
 
@@ -394,7 +394,7 @@ enum StoryMoreMenu {
     }
 
     private static func speedText(_ rate: Double) -> String {
-        if abs(rate - rate.rounded()) < 0.01 { return "\(Int(rate.rounded()))x" }
+        if Swift.abs(rate - rate.rounded()) < 0.01 { return "\(Int(rate.rounded()))x" }
         return String(format: "%.1fx", rate)
     }
 

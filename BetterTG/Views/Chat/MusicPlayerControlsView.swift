@@ -316,7 +316,7 @@ final class MusicPlayerControlsView: UIView {
         let timestamp = scrubber.displayedTimestamp
         let elapsed = Self.timeString(seconds: Int(floor(timestamp)))
         elapsedLabel.text = elapsed
-        remainingLabel.text = Self.timeString(seconds: Int(abs(floor(timestamp - content.duration))))
+        remainingLabel.text = Self.timeString(seconds: Int(Swift.abs(floor(timestamp - content.duration))))
         scrubber.accessibilityValue = L10n.betterTG(
             "Accessibility.MusicPlaybackPositionValue",
             elapsed,
@@ -468,7 +468,7 @@ final class MusicPlayerScrubberView: UIView, UIGestureRecognizerDelegate {
     }
 
     func update(position: TimeInterval, duration: TimeInterval) {
-        if let pendingSeek, abs(position - pendingSeek.timestamp) < 1 || CACurrentMediaTime() > pendingSeek.deadline {
+        if let pendingSeek, Swift.abs(position - pendingSeek.timestamp) < 1 || CACurrentMediaTime() > pendingSeek.deadline {
             self.pendingSeek = nil
         }
         self.position = position

@@ -70,8 +70,9 @@ final class TelegramSplitPlaceholderViewController: UIViewController, TelegramEm
     }
 
     private var activeDivision: CGRect? {
+        // reservedRegions(kind:) requires the iOS 27.1 SDK; unavailable under Xcode 26.3.
         guard #available(iOS 27.1, *) else { return nil }
-        return view.reservedRegions(kind: .division).first(where: \.isActive)?.frame
+        return nil
     }
 
     init(master: TelegramNavigationController) {
@@ -107,8 +108,8 @@ final class TelegramSplitPlaceholderViewController: UIViewController, TelegramEm
             controller.didMove(toParent: self)
         }
         if #available(iOS 27.1, *) {
-            // The fold's region changes as the hinge does.
-            view.addInteraction(UIHingeInteraction { [weak self] _, _ in self?.view.setNeedsLayout() })
+            // UIHingeInteraction requires the iOS 27.1 SDK; no-op under Xcode 26.3.
+            // The fold's region changes as the hinge does — restore when building with Xcode 27+.
         }
     }
 

@@ -473,7 +473,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
         // While the viewers list is open the story only takes the tap that closes it and the drag that moves it.
         if viewListDisplay != .hidden, gestureRecognizer === holdGesture { return false }
         guard gestureRecognizer === panGesture else { return true }
-        let isVertical = abs(panGesture.velocity(in: view).y) > abs(panGesture.velocity(in: view).x)
+        let isVertical = Swift.abs(panGesture.velocity(in: view).y) > Swift.abs(panGesture.velocity(in: view).x)
         if viewListDisplay != .hidden { return isVertical }
         // Telegram's swipe up on the account's own story opens its viewers.
         if isVertical, panGesture.velocity(in: view).y < 0 { return showsViewList }
@@ -481,7 +481,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
             return false
         }
         let velocity = panGesture.velocity(in: view)
-        if abs(velocity.y) > abs(velocity.x) { return velocity.y > 0 }
+        if Swift.abs(velocity.y) > Swift.abs(velocity.x) { return velocity.y > 0 }
         // Telegram's horizontal pan runs with a single poster too: it bands at the ends, and a flick there closes.
         return true
     }
@@ -1244,13 +1244,13 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
         let velocity = gesture.velocity(in: view)
         switch gesture.state {
         case .began:
-            if viewListDisplay != .hidden || velocity.y < 0, abs(velocity.y) > abs(velocity.x) {
+            if viewListDisplay != .hidden || velocity.y < 0, Swift.abs(velocity.y) > Swift.abs(velocity.x) {
                 panAxis = .viewList
                 areaTooltip?.dismiss()
                 beginViewListDrag(fromList: false)
                 return
             }
-            panAxis = abs(velocity.y) > abs(velocity.x) ? .dismissal : .poster
+            panAxis = Swift.abs(velocity.y) > Swift.abs(velocity.x) ? .dismissal : .poster
             areaTooltip?.dismiss()
             if panAxis == .poster { beginPosterPan() }
             setPaused(true, for: .drag)
@@ -1475,7 +1475,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
                 children = StoryMoreMenu.speeds.map { rate in
                     TelegramContextMenuAction(
                         title: StoryMoreMenu.speedTitle(rate),
-                        image: abs(rate - current) < 0.01 ? UIImage(systemName: "checkmark") : UIImage(),
+                        image: Swift.abs(rate - current) < 0.01 ? UIImage(systemName: "checkmark") : UIImage(),
                         handler: { [weak self] in self?.setBaseRate(rate) },
                     )
                 }
@@ -2123,7 +2123,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
             let index = ids.firstIndex(of: key.storyID)
             let delta = (index ?? -100) - state.storyIndex
             let visible = key.chatID == state
-                .currentChatID && (delta == 0 || (viewListPageFraction != nil && abs(delta) == 1))
+                .currentChatID && (delta == 0 || (viewListPageFraction != nil && Swift.abs(delta) == 1))
             panel.isHidden = !visible
             guard visible else { continue }
             let x = CGFloat(delta) * (view.bounds.width + 20) + (viewListPageFraction ?? 0) * view.bounds.width
@@ -2171,10 +2171,10 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
         guard let panel = viewListPanel, let pan = viewListPan, viewListDisplay != .hidden,
               viewListPageAnimation == nil else { return false }
         let velocity = pan.velocity(in: view)
-        if abs(velocity.x) > abs(velocity.y) {
+        if Swift.abs(velocity.x) > Swift.abs(velocity.y) {
             return state.storyCount > 1 && !isPresentingTelegramContextMenu && viewListPageAnimation == nil
         }
-        guard abs(velocity.y) > abs(velocity.x) else { return false }
+        guard Swift.abs(velocity.y) > Swift.abs(velocity.x) else { return false }
         if viewListDisplay == .half { return true }
         return velocity.y > 0 && panel.isAtTop
     }
@@ -2184,7 +2184,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
         let velocity = gesture.velocity(in: view)
         switch gesture.state {
         case .began:
-            viewListPaging = abs(velocity.x) > abs(velocity.y)
+            viewListPaging = Swift.abs(velocity.x) > Swift.abs(velocity.y)
             if viewListPaging {
                 viewListPanel?.endSearch()
                 viewListPageFraction = 0
@@ -2354,7 +2354,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
             forward = hasPrevious ? false : nil
         } else if cubeFraction >= StoryCubeGeometry.commitFraction {
             forward = hasNext ? true : nil
-        } else if abs(velocity) >= StoryCubeGeometry.commitVelocity {
+        } else if Swift.abs(velocity) >= StoryCubeGeometry.commitVelocity {
             if velocity < 0 {
                 if hasNext { forward = true } else { mayDismiss = true }
             } else if hasPrevious { forward = false } else { mayDismiss = true }
@@ -2387,7 +2387,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
 
     /// Springs the cube back to rest over Telegram's 0.4 s, holding the story's clock meanwhile.
     private func startCubeTurn() {
-        guard abs(cubeFraction) > 0.0001, !isClosing else {
+        guard Swift.abs(cubeFraction) > 0.0001, !isClosing else {
             finishCubeTurn()
             return
         }
@@ -2436,7 +2436,7 @@ final class StoryViewerController: UIViewController, UIGestureRecognizerDelegate
         for (face, offset) in [(previousFace, CGFloat(-1)), (focusedFace, 0), (nextFace, 1)] {
             let rotation = -cubeFraction + offset
             if face !== focusedFace {
-                face.isHidden = !isActive || !face.hasContent || abs(rotation) >= 1
+                face.isHidden = !isActive || !face.hasContent || Swift.abs(rotation) >= 1
             }
             face.setRotation(rotation, sideAngle: sideAngle, reducesMotion: reducesMotion)
         }

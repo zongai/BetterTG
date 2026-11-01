@@ -114,7 +114,7 @@ extension VideoEditAdjustments {
             if crop.isMirrored {
                 parts.append(Self.mirrorFlag)
             }
-            if abs(crop.rotation) > .ulpOfOne {
+            if Swift.abs(crop.rotation) > .ulpOfOne {
                 parts.append(Self.rotationPrefix + String(format: "%.5f", crop.rotation))
             }
         }
@@ -155,7 +155,7 @@ extension VideoEditAdjustments {
                 orientation = turn
             } else if part.hasPrefix(rotationPrefix) {
                 guard let value = Double(part.dropFirst(rotationPrefix.count)),
-                      abs(value) <= Double(PhotoCropAdjustments.maximumRotation) + 0.001
+                      Swift.abs(value) <= Double(PhotoCropAdjustments.maximumRotation) + 0.001
                 else { return nil }
                 rotation = CGFloat(value)
             } else if part.hasPrefix(paintPrefix) {
@@ -217,7 +217,7 @@ extension PhotoCropAdjustments {
             ? CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: originalSize.width, ty: 0)
             : .identity
         var straightening = CGAffineTransform.identity
-        if abs(rotation) > .ulpOfOne {
+        if Swift.abs(rotation) > .ulpOfOne {
             let content = rotatedContentSize
             straightening = CGAffineTransform(translationX: -originalSize.width / 2, y: -originalSize.height / 2)
                 .concatenating(CGAffineTransform(rotationAngle: rotation))

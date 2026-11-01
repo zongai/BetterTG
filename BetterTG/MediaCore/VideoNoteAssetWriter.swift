@@ -186,8 +186,8 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
               let audioTrack = audioTracks.first
         else { throw VideoNoteAssetWriterError.invalidAsset }
         let naturalSize = try await videoTrack.load(.naturalSize)
-        let width = Int(abs(naturalSize.width).rounded())
-        let height = Int(abs(naturalSize.height).rounded())
+        let width = Int(Swift.abs(naturalSize.width).rounded())
+        let height = Int(Swift.abs(naturalSize.height).rounded())
         guard width == height,
               width > 0,
               width <= 640,
@@ -202,11 +202,11 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
                   guard CMFormatDescriptionGetMediaSubType(format) == kAudioFormatMPEG4AAC,
                         let description = CMAudioFormatDescriptionGetStreamBasicDescription(format)
                   else { return false }
-                  return abs(description.pointee.mSampleRate - 48000) < 1
+                  return Swift.abs(description.pointee.mSampleRate - 48000) < 1
                       && description.pointee.mChannelsPerFrame == 1
               }),
-              abs(videoTimeRange.start.seconds) < 0.05,
-              abs(audioTimeRange.start.seconds) < 0.05,
+              Swift.abs(videoTimeRange.start.seconds) < 0.05,
+              Swift.abs(audioTimeRange.start.seconds) < 0.05,
               videoTimeRange.duration.seconds >= duration - 0.05,
               audioTimeRange.duration.seconds >= duration - 0.05
         else {
@@ -387,7 +387,7 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
                     stage = "finish/drain"
                     let result = try await finishTask.value
                     activeWriter = nil
-                    guard abs(result.duration - 1) < 0.02 else {
+                    guard Swift.abs(result.duration - 1) < 0.02 else {
                         throw VideoNoteAssetWriterError.invalidAsset
                     }
                     stage = "round/orientation"
@@ -399,10 +399,10 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
                     guard transitionPixels.count == 6,
                           let firstTransition = transitionPixels.first,
                           let lastTransition = transitionPixels.last,
-                          abs(Int(firstTransition.output) - Int(firstTransition.previous))
-                          < abs(Int(firstTransition.target) - Int(firstTransition.previous)),
+                          Swift.abs(Int(firstTransition.output) - Int(firstTransition.previous))
+                          < Swift.abs(Int(firstTransition.target) - Int(firstTransition.previous)),
                           firstTransition.output != firstTransition.target,
-                          abs(Int(lastTransition.output) - Int(lastTransition.target)) <= 2
+                          Swift.abs(Int(lastTransition.output) - Int(lastTransition.target)) <= 2
                     else {
                         throw VideoNoteAssetWriterError.probeFailed(
                             "rendered transition pixels=\(transitionPixels)",
@@ -730,10 +730,10 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
             let right = pixel(at: CGPoint(x: centerPoint.x + 100, y: centerPoint.y))
             let bottom = pixel(at: CGPoint(x: centerPoint.x, y: centerPoint.y - 100))
             let top = pixel(at: CGPoint(x: centerPoint.x, y: centerPoint.y + 100))
-            let redHorizontalDifference = abs(Int(left[0]) - Int(right[0]))
-            let redVerticalDifference = abs(Int(bottom[0]) - Int(top[0]))
-            let blueHorizontalDifference = abs(Int(left[2]) - Int(right[2]))
-            let blueVerticalDifference = abs(Int(bottom[2]) - Int(top[2]))
+            let redHorizontalDifference = Swift.abs(Int(left[0]) - Int(right[0]))
+            let redVerticalDifference = Swift.abs(Int(bottom[0]) - Int(top[0]))
+            let blueHorizontalDifference = Swift.abs(Int(left[2]) - Int(right[2]))
+            let blueVerticalDifference = Swift.abs(Int(bottom[2]) - Int(top[2]))
             guard corners.allSatisfy({ $0.prefix(3).allSatisfy { $0 < 28 } }),
                   outsideCirclePixels.allSatisfy({ $0.prefix(3).allSatisfy { $0 < 40 } }),
                   [center, left, right, bottom, top].allSatisfy({
@@ -793,7 +793,7 @@ final class VideoNoteAssetWriter: @unchecked Sendable {
                 guard status == kCMBlockBufferNoErr else { throw VideoNoteAssetWriterError.invalidAsset }
                 data.withUnsafeBytes { bytes in
                     for sample in bytes.bindMemory(to: Int16.self) {
-                        peak = max(peak, abs(Int(sample)))
+                        peak = max(peak, Swift.abs(Int(sample)))
                         sampleCount += 1
                     }
                 }

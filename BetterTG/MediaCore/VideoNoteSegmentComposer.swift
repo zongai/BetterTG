@@ -121,8 +121,8 @@ enum VideoNoteSegmentComposer {
             else { throw VideoNoteSegmentComposerError.invalidSegment }
             let naturalSize = try await videoTrack.load(.naturalSize)
             try Task.checkCancellation()
-            let length = Int(abs(naturalSize.width).rounded())
-            guard length == Int(abs(naturalSize.height).rounded()),
+            let length = Int(Swift.abs(naturalSize.width).rounded())
+            guard length == Int(Swift.abs(naturalSize.height).rounded()),
                   length == 400,
                   expectedLength.map({ $0 == length }) ?? true
             else { throw VideoNoteSegmentComposerError.invalidSegment }
@@ -130,7 +130,7 @@ enum VideoNoteSegmentComposer {
 
             let duration = sourceDuration.seconds
             guard duration > 0,
-                  abs(duration - segment.duration) < 0.05,
+                  Swift.abs(duration - segment.duration) < 0.05,
                   cursor.seconds + duration <= 60.01
             else { throw VideoNoteSegmentComposerError.invalidDuration }
             let timeRange = CMTimeRange(
@@ -287,7 +287,7 @@ enum VideoNoteSegmentComposer {
                 try Task.checkCancellation()
                 let validated = try await VideoNoteAssetWriter.validate(url: outputURL, expectedLength: 400)
                 try Task.checkCancellation()
-                guard abs(validated.duration - timeRange.duration.seconds) < 0.05 else {
+                guard Swift.abs(validated.duration - timeRange.duration.seconds) < 0.05 else {
                     throw VideoNoteSegmentComposerError.invalidDuration
                 }
                 try Task.checkCancellation()
@@ -360,10 +360,10 @@ enum VideoNoteSegmentComposer {
                 }
                 stage = "composition"
                 let composition = try await compose(segments)
-                guard abs(composition.duration - 1.5) < 0.03,
+                guard Swift.abs(composition.duration - 1.5) < 0.03,
                       composition.segmentRanges.count == 2,
-                      abs(composition.segmentRanges[0].upperBound - 0.7) < 0.03,
-                      abs(composition.segmentRanges[1].lowerBound - 0.7) < 0.03
+                      Swift.abs(composition.segmentRanges[0].upperBound - 0.7) < 0.03,
+                      Swift.abs(composition.segmentRanges[1].lowerBound - 0.7) < 0.03
                 else { throw VideoNoteSegmentComposerError.invalidDuration }
                 let compositionVideoTracks = try await composition.asset.loadTracks(withMediaType: .video)
                 let compositionAudioTracks = try await composition.asset.loadTracks(withMediaType: .audio)
@@ -375,10 +375,10 @@ enum VideoNoteSegmentComposer {
                 guard videoMappings.count == 2,
                       audioMappings.count == 2,
                       zip(videoMappings, audioMappings).allSatisfy({ video, audio in
-                          abs(video.start.seconds - audio.start.seconds) < 0.001
-                              && abs(video.duration.seconds - audio.duration.seconds) < 0.001
+                          Swift.abs(video.start.seconds - audio.start.seconds) < 0.001
+                              && Swift.abs(video.duration.seconds - audio.duration.seconds) < 0.001
                       }),
-                      abs(videoMappings[1].start.seconds - 0.7) < 0.03
+                      Swift.abs(videoMappings[1].start.seconds - 0.7) < 0.03
                 else { throw VideoNoteSegmentComposerError.invalidSegment }
                 stage = "thumbnails"
                 let thumbnails = try await thumbnails(for: segments)
@@ -386,7 +386,7 @@ enum VideoNoteSegmentComposer {
                       thumbnails.allSatisfy({ !$0.jpegData.isEmpty }),
                       thumbnails.first?.time == 0,
                       thumbnails.enumerated().allSatisfy({ index, thumbnail in
-                          abs(thumbnail.time - Double(index) * composition.duration / 13) < 0.001
+                          Swift.abs(thumbnail.time - Double(index) * composition.duration / 13) < 0.001
                       }),
                       thumbnails.first?.jpegData != thumbnails.last?.jpegData
                 else { throw VideoNoteSegmentComposerError.invalidSegment }
@@ -396,7 +396,7 @@ enum VideoNoteSegmentComposer {
                     trimRange: 0.2..<1.3,
                     outputURL: outputURL,
                 )
-                guard abs(materialized.duration - 1.1) < 0.05,
+                guard Swift.abs(materialized.duration - 1.1) < 0.05,
                       materialized.length == 400
                 else { throw VideoNoteSegmentComposerError.invalidDuration }
                 stage = "decoded order"
@@ -409,14 +409,14 @@ enum VideoNoteSegmentComposer {
                 let outputLastGreen = try await centerGreen(asset: outputAsset, time: 1.05)
                 let outputVideoTrack = try await outputAsset.loadTracks(withMediaType: .video).first
                 let outputAudioTrack = try await outputAsset.loadTracks(withMediaType: .audio).first
-                guard abs(Int(sourceFirstGreen) - Int(sourceSecondGreen)) > 20,
-                      abs(Int(outputFirstGreen) - Int(sourceFirstGreen)) < 12,
-                      abs(Int(outputBoundaryGreen) - Int(sourceSecondGreen)) < 12,
-                      abs(Int(outputLastGreen) - Int(sourceLastGreen)) < 12,
+                guard Swift.abs(Int(sourceFirstGreen) - Int(sourceSecondGreen)) > 20,
+                      Swift.abs(Int(outputFirstGreen) - Int(sourceFirstGreen)) < 12,
+                      Swift.abs(Int(outputBoundaryGreen) - Int(sourceSecondGreen)) < 12,
+                      Swift.abs(Int(outputLastGreen) - Int(sourceLastGreen)) < 12,
                       let outputVideoTrack,
                       let outputAudioTrack,
-                      try await abs(outputVideoTrack.load(.timeRange).start.seconds) < 0.05,
-                      try await abs(outputAudioTrack.load(.timeRange).start.seconds) < 0.05
+                      try await Swift.abs(outputVideoTrack.load(.timeRange).start.seconds) < 0.05,
+                      try await Swift.abs(outputAudioTrack.load(.timeRange).start.seconds) < 0.05
                 else { throw VideoNoteSegmentComposerError.invalidSegment }
                 stage = "decoded audio"
                 let firstRMS = try await audioRMS(asset: outputAsset, range: 0.2..<0.4)

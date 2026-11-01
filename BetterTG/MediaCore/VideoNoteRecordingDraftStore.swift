@@ -343,7 +343,7 @@ actor VideoNoteRecordingDraftStore {
         var updated = canonical
         updated.revision += 1
         if normalizedRange.lowerBound <= 0.000_001,
-           abs(normalizedRange.upperBound - canonical.totalDuration) <= 0.000_001
+           Swift.abs(normalizedRange.upperBound - canonical.totalDuration) <= 0.000_001
         {
             updated.trimStart = nil
             updated.trimEnd = nil
@@ -656,13 +656,13 @@ actor VideoNoteRecordingDraftStore {
                 guard !fileManager.fileExists(atPath: firstURL.path(percentEncoded: false)),
                       draft.revision == 0,
                       draft.segments.count == 1,
-                      abs(draft.totalDuration - 0.7) < 0.03,
+                      Swift.abs(draft.totalDuration - 0.7) < 0.03,
                       await drafts(for: chatID).contains(where: {
-                          $0.id == draft.id && abs($0.totalDuration - 0.7) < 0.03
+                          $0.id == draft.id && Swift.abs($0.totalDuration - 0.7) < 0.03
                       })
                 else { throw VideoNoteRecordingDraftStoreError.invalidAsset }
                 let shortPreview = try await composition(for: draft)
-                guard abs(shortPreview.duration - 0.7) < 0.03 else {
+                guard Swift.abs(shortPreview.duration - 0.7) < 0.03 else {
                     throw VideoNoteRecordingDraftStoreError.invalidAsset
                 }
                 stage = "append"
@@ -672,13 +672,13 @@ actor VideoNoteRecordingDraftStore {
                       draft.segments.count == 2,
                       draft.trimStart == nil,
                       draft.trimEnd == nil,
-                      abs(draft.totalDuration - 1.7) < 0.04
+                      Swift.abs(draft.totalDuration - 1.7) < 0.04
                 else { throw VideoNoteRecordingDraftStoreError.invalidAsset }
                 stage = "trim"
                 draft = try updateTrim(in: draft, range: 0.2..<1.4)
                 guard draft.revision == 2,
-                      abs(draft.effectiveRange.lowerBound - 0.2) < 0.001,
-                      abs(draft.effectiveRange.upperBound - 1.4) < 0.001
+                      Swift.abs(draft.effectiveRange.lowerBound - 0.2) < 0.001,
+                      Swift.abs(draft.effectiveRange.upperBound - 1.4) < 0.001
                 else { throw VideoNoteRecordingDraftStoreError.staleRevision }
                 stage = "reload"
                 guard let restored = await drafts(for: chatID).first(where: { $0.id == draft.id }),
@@ -694,7 +694,7 @@ actor VideoNoteRecordingDraftStore {
                 else { throw VideoNoteRecordingDraftStoreError.invalidAsset }
                 stage = "materialization"
                 let materialized = try await materialize(restored, outputURL: outputURL)
-                guard abs(materialized.duration - 1.2) < 0.05 else {
+                guard Swift.abs(materialized.duration - 1.2) < 0.05 else {
                     throw VideoNoteRecordingDraftStoreError.invalidAsset
                 }
                 stage = "origin handoff"

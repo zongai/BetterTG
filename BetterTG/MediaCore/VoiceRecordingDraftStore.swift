@@ -202,7 +202,7 @@ actor VoiceRecordingDraftStore {
         var updatedDraft = canonicalDraft
         updatedDraft.editRevision += 1
         if range.lowerBound <= 0.000_001,
-           abs(range.upperBound - canonicalDraft.exactDuration) <= 0.000_001
+           Swift.abs(range.upperBound - canonicalDraft.exactDuration) <= 0.000_001
         {
             updatedDraft.trimStart = nil
             updatedDraft.trimEnd = nil

@@ -232,7 +232,7 @@ enum VoiceNotePCMEditor {
               bitDepth == 16,
               !isFloat,
               !isBigEndian,
-              abs(format.sampleRate - sampleRate) < 0.5,
+              Swift.abs(format.sampleRate - sampleRate) < 0.5,
               format.channelCount == 1
         else {
             throw EditorError.incompatibleFormat
@@ -240,7 +240,7 @@ enum VoiceNotePCMEditor {
     }
 
     private static func formatsAreCompatible(_ lhs: AVAudioFormat, _ rhs: AVAudioFormat) -> Bool {
-        abs(lhs.sampleRate - rhs.sampleRate) < 0.5
+        Swift.abs(lhs.sampleRate - rhs.sampleRate) < 0.5
             && lhs.channelCount == rhs.channelCount
             && lhs.commonFormat == rhs.commonFormat
             && lhs.isInterleaved == rhs.isInterleaved
@@ -257,13 +257,13 @@ enum VoiceNotePCMEditor {
         switch buffer.format.commonFormat {
         case .pcmFormatFloat32:
             guard let channel = buffer.floatChannelData?[0] else { throw EditorError.unsupportedPCMFormat }
-            sample = { abs(channel[$0]) }
+            sample = { Swift.abs(channel[$0]) }
         case .pcmFormatInt16:
             guard let channel = buffer.int16ChannelData?[0] else { throw EditorError.unsupportedPCMFormat }
-            sample = { Float(abs(Int(channel[$0]))) / Float(Int16.max) }
+            sample = { Float(Swift.abs(Int(channel[$0]))) / Float(Int16.max) }
         case .pcmFormatInt32:
             guard let channel = buffer.int32ChannelData?[0] else { throw EditorError.unsupportedPCMFormat }
-            sample = { Float(abs(Int64(channel[$0]))) / Float(Int64(Int32.max)) }
+            sample = { Float(Swift.abs(Int64(channel[$0]))) / Float(Int64(Int32.max)) }
         default:
             throw EditorError.unsupportedPCMFormat
         }

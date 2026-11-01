@@ -55,7 +55,7 @@ enum ChatSearchTextHighlight {
                     let matched = zip(word, lowered).prefix { $0.0 == $0.1 }.count
                     guard matched > 0 else { continue }
                     let length = Double(max(word.count, lowered.count))
-                    guard abs(length - Double(matched)) / length < 0.37 else { continue }
+                    guard Swift.abs(length - Double(matched)) / length < 0.37 else { continue }
                     var found = partRange
                     if hasLeadingSymbol, found.location > 0 {
                         found = NSRange(location: found.location - 1, length: found.length + 1)

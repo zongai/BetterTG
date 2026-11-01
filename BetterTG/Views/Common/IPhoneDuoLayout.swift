@@ -157,10 +157,10 @@ struct IPhoneDuoLayout: Equatable {
 
 private extension UIWindow {
     var windowIPhoneDuoLayout: IPhoneDuoLayout? {
+        // reservedRegions(kind:) is an iOS 27.1+ API not present in the iOS 26 SDK
+        // (Xcode 26.3). Until CI builds with Xcode 27+, treat every window as non-Duo.
         guard #available(iOS 27.1, *) else { return nil }
-        return IPhoneDuoLayout(windowSize: bounds.size, safeInsets: safeAreaInsets) {
-            reservedRegions(kind: .occlusion).map(\.frame)
-        }
+        return nil
     }
 }
 

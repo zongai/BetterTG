@@ -282,7 +282,7 @@ enum RaiseToListenSettings {
 
     private func attitudeChanged(_ gravity: CMAcceleration, at timestamp: TimeInterval, handler: () -> Void) {
         let isFacing = gravity.z < -0.45
-        let isUpright = abs(gravity.z) < 0.35 && (gravity.y < -0.3 || abs(gravity.x) > 0.6)
+        let isUpright = Swift.abs(gravity.z) < 0.35 && (gravity.y < -0.3 || Swift.abs(gravity.x) > 0.6)
         if isFacing {
             facedAt = timestamp
             isAtEar = false

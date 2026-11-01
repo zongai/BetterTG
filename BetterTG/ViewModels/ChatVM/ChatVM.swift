@@ -1083,7 +1083,7 @@ import UIKit
     var voiceRecordingResumeRequiresTrimConfirmation: Bool {
         guard let draft = activeVoiceRecordingDraft else { return false }
         let range = draft.effectiveRange
-        return range.lowerBound > 0.000_001 || abs(range.upperBound - draft.exactDuration) > 0.000_001
+        return range.lowerBound > 0.000_001 || Swift.abs(range.upperBound - draft.exactDuration) > 0.000_001
     }
 
     var formattedVoiceRecordingPreviewDuration: String {
@@ -2884,9 +2884,9 @@ import UIKit
                 row.sourceMessages.contains { $0.id >= gap.newerBoundID }
             }) else { continue }
             let olderIndex = newerIndex + 1
-            let newerDistance = visibleIndices.map { abs($0 - newerIndex) }.min() ?? .max
+            let newerDistance = visibleIndices.map { Swift.abs($0 - newerIndex) }.min() ?? .max
             let olderDistance = olderIndex < messages.count
-                ? visibleIndices.map { abs($0 - olderIndex) }.min() ?? .max
+                ? visibleIndices.map { Swift.abs($0 - olderIndex) }.min() ?? .max
                 : Int.max
             guard min(newerDistance, olderDistance) <= reach else { continue }
             let fillsFromOlderSide = olderDistance < newerDistance
@@ -6147,7 +6147,7 @@ import UIKit
               let draft = activeVoiceRecordingDraft
         else { return }
         let range = draft.effectiveRange
-        if range.lowerBound > 0.000_001 || abs(range.upperBound - draft.exactDuration) > 0.000_001 {
+        if range.lowerBound > 0.000_001 || Swift.abs(range.upperBound - draft.exactDuration) > 0.000_001 {
             guard confirmingTrim else { return }
             materializeVoiceRecordingTrim(draft, continuation: .resume)
             return
@@ -6225,7 +6225,7 @@ import UIKit
         voiceRecordingPreviewPlayer.pause()
         releaseVoiceRecordingPreviewAudioSession()
         var editedDraft = previousDraft
-        if lowerBound <= 0.000_001, abs(upperBound - duration) <= 0.000_001 {
+        if lowerBound <= 0.000_001, Swift.abs(upperBound - duration) <= 0.000_001 {
             editedDraft.trimStart = nil
             editedDraft.trimEnd = nil
         } else {
@@ -8649,7 +8649,7 @@ import UIKit
               let draft = activeVoiceRecordingDraft
         else { return }
         let range = draft.effectiveRange
-        if range.lowerBound > 0.000_001 || abs(range.upperBound - draft.exactDuration) > 0.000_001 {
+        if range.lowerBound > 0.000_001 || Swift.abs(range.upperBound - draft.exactDuration) > 0.000_001 {
             materializeVoiceRecordingTrim(draft, continuation: .send)
             return
         }

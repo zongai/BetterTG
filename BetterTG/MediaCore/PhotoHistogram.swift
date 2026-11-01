@@ -33,21 +33,22 @@ struct PhotoHistogram {
         }
         guard isDrawn else { return nil }
         // The luminance's bins, then red's, green's and blue's.
+        // Broken into locals so the type checker on Xcode 26.3 finishes in reasonable time.
         var bins = [Int](repeating: 0, count: 256 * 4)
-        pixels.withUnsafeBufferPointer { bytes in
-            bins.withUnsafeMutableBufferPointer { counts in
-                for index in stride(from: 0, to: bytes.count, by: 4) {
-                    let red = Int(bytes[index])
-                    let green = Int(bytes[index + 1])
-                    let blue = Int(bytes[index + 2])
-                    // The generator truncates the luma to a whole step.
-                    let luma = Int(Double(red) * 0.3 + Double(green) * 0.59 + Double(blue) * 0.11)
-                    counts[min(255, luma)] += 1
-                    counts[256 + red] += 1
-                    counts[512 + green] += 1
-                    counts[768 + blue] += 1
-                }
-            }
+        let pixelCount = pixels.count
+        var index = 0
+        while index + 3 < pixelCount {
+            let red = Int(pixels[index])
+            let green = Int(pixels[index + 1])
+            let blue = Int(pixels[index + 2])
+            // The generator truncates the luma to a whole step.
+            let luma = Int(Double(red) * 0.3 + Double(green) * 0.59 + Double(blue) * 0.11)
+            let lumaBin = min(255, luma)
+            bins[lumaBin] += 1
+            bins[256 + red] += 1
+            bins[512 + green] += 1
+            bins[768 + blue] += 1
+            index += 4
         }
         self.luminance = Self.normalized(bins[0..<256])
         self.red = Self.normalized(bins[256..<512])

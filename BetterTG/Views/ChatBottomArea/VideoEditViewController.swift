@@ -952,7 +952,7 @@ final class VideoEditViewController: UIViewController {
         isPlaying = true
         setPlayButtonHidden(true, animated: true)
         let current = player.currentTime().seconds
-        if !current.isFinite || abs(scrubber.trimEnd - current) < Self.restartThreshold {
+        if !current.isFinite || Swift.abs(scrubber.trimEnd - current) < Self.restartThreshold {
             seek(to: scrubber.trimStart)
             scrubber.setPlaybackPosition(scrubber.trimStart)
         }
