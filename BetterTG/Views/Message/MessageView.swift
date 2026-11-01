@@ -883,16 +883,19 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         }
         let showsAvatarColumn = showsProfileImage && !message.message.isOutgoing && !isCentered
         if usesFullWidthBubble {
-            rowLeadingConstraint.constant = showsAvatarColumn ? 0 : 4
-            rowTrailingConstraint.constant = -4
-            rowStack.setCustomSpacing(6, after: avatarView)
+            // 更紧的左右边距，减少频道/群组留白
+            rowLeadingConstraint.constant = showsAvatarColumn ? 0 : 2
+            rowTrailingConstraint.constant = -2
+            rowStack.setCustomSpacing(4, after: avatarView)
         } else {
             rowLeadingConstraint.constant = isCentered ? 8 : (showsAvatarColumn ? 0 : 2)
             rowTrailingConstraint.constant = isCentered ? -8 : -2
             rowStack.setCustomSpacing(8, after: avatarView)
         }
-        rowTopConstraint.constant = pendingBubbleMerge.withOlder ? 0 : 7 / 3
-        rowBottomConstraint.constant = pendingBubbleMerge.withNewer ? 0 : -7 / 3
+        // 群组/频道略压缩行距
+        let verticalGap: CGFloat = usesFullWidthBubble ? 1 : (7 / 3)
+        rowTopConstraint.constant = pendingBubbleMerge.withOlder ? 0 : verticalGap
+        rowBottomConstraint.constant = pendingBubbleMerge.withNewer ? 0 : -verticalGap
         configureSelection(
             active: selectionActive,
             selected: selected,
@@ -948,10 +951,14 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             tail: !isCentered && bubbleFill != .clear,
         )
         let usesEdgeToEdgeContent = usesFullBleedMedia || isCentered
-        bubbleTopConstraint.constant = usesEdgeToEdgeContent ? 0 : 6
-        bubbleLeadingConstraint.constant = usesEdgeToEdgeContent ? 0 : 8
-        bubbleTrailingConstraint.constant = usesEdgeToEdgeContent ? 0 : -8
-        bubbleBottomConstraint.constant = usesEdgeToEdgeContent ? 0 : -5
+        // 群组/频道气泡内边距略收，让内容更满
+        let bubblePadH: CGFloat = usesEdgeToEdgeContent ? 0 : (usesFullWidthBubble ? 6 : 8)
+        let bubblePadTop: CGFloat = usesEdgeToEdgeContent ? 0 : (usesFullWidthBubble ? 4 : 6)
+        let bubblePadBottom: CGFloat = usesEdgeToEdgeContent ? 0 : (usesFullWidthBubble ? -4 : -5)
+        bubbleTopConstraint.constant = bubblePadTop
+        bubbleLeadingConstraint.constant = bubblePadH
+        bubbleTrailingConstraint.constant = usesEdgeToEdgeContent ? 0 : -bubblePadH
+        bubbleBottomConstraint.constant = bubblePadBottom
         if let senderName, !isCentered, !isStandaloneUnframedMedia {
             senderNameView.isHidden = false
             senderNameView.configure(senderName)
@@ -1853,9 +1860,9 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 rowStack.addArrangedSubview(avatarView)
             }
             rowStack.addArrangedSubview(bubbleColumn)
-            // ChatMessageBubbleItemNode: 8 pt after an incoming bubble.
+            // ChatMessageBubbleItemNode: 8 pt after an incoming bubble; 群组/频道收紧为 4
             if shareButtonKind != nil {
-                rowStack.setCustomSpacing(8, after: bubbleColumn)
+                rowStack.setCustomSpacing(usesFullWidthBubble ? 4 : 8, after: bubbleColumn)
                 rowStack.addArrangedSubview(shareButton)
             } else {
                 rowStack.setCustomSpacing(rowStack.spacing, after: bubbleColumn)
@@ -1906,6 +1913,10 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         if !inlineKeyboardView.isHidden, mediaWidth == 0 {
             preferredBubbleWidth = min(maximumBubbleWidth, max(preferredBubbleWidth, inlineKeyboardView.minimumWidth))
         }
+        // 群组/频道：气泡直接拉到最大可用宽度，减少两侧留白
+        if usesFullWidthBubble, mediaWidth == 0 {
+            preferredBubbleWidth = maximumBubbleWidth
+        }
         if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {
             bubbleWidthConstraint.constant = preferredBubbleWidth
         }
@@ -1932,11 +1943,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     /// Groups use nearly the full row (avatar / share button still reserved when present).
     private func maximumBubbleWidth(for cellWidth: CGFloat) -> CGFloat {
         let width = cellWidth > 0 ? cellWidth : Utils.messageListWidth - 16
-        let avatar: CGFloat = avatarView.superview === rowStack ? 35 : 0
-        let share: CGFloat = shareButtonKind != nil ? (30 + 8 + 12) : 0
+        let avatar: CGFloat = avatarView.superview === rowStack ? 32 : 0
+        // 分享按钮实际约 30，间距收紧为 4
+        let share: CGFloat = shareButtonKind != nil ? (30 + 4) : 0
         if usesFullWidthBubble {
-            // 横向满屏：扣除头像、分享按钮与两侧少量边距后占满可用宽度
-            return max(1, floor(width - avatar - share - 8))
+            // 横向满屏：仅扣除头像/分享与最小边距
+            return max(1, floor(width - avatar - share - 4))
         }
         let maximum = floor(width * 0.82)
         guard shareButtonKind != nil else { return maximum }
