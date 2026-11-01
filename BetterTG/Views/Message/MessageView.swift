@@ -1421,7 +1421,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                     sourceText: source
                 ) {
                     self.representedTranslatedText = translated
-                    self.refreshTranslationUI(translated: translated)
+                    // 异步译文到达：更新内容，高度仅在非滚动时安全刷新
+                    self.refreshTranslationUI(translated: translated, heightUpdate: .deferred)
                 }
             }
         }
@@ -1438,16 +1439,20 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             sourceText: sourceText
         ) {
             representedTranslatedText = translated
-            refreshTranslationUI(translated: translated)
+            // 配置/复用 cell 时只改 UI，不 invalidate 列表（滚动中 invalidate 会闪退）
+            refreshTranslationUI(translated: translated, heightUpdate: .none)
         } else {
             translationLabel.isHidden = true
             translationLabel.attributedText = nil
             textView.isHidden = false
+            let capturedChat = chatID
+            let capturedMessage = messageID
+            let capturedText = sourceText
             Task { @MainActor in
                 _ = await AutoTranslator.shared.translateIfNeeded(
-                    chatID: chatID,
-                    messageID: messageID,
-                    text: sourceText
+                    chatID: capturedChat,
+                    messageID: capturedMessage,
+                    text: capturedText
                 )
             }
         }
@@ -1467,12 +1472,19 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         else { return }
         _ = TranslationDisplayStore.toggle(chatID: key.chatID, messageID: key.messageID)
         if let translated = representedTranslatedText {
-            refreshTranslationUI(translated: translated)
+            // 用户主动切换：需要立刻重测高度
+            refreshTranslationUI(translated: translated, heightUpdate: .immediate)
         }
     }
 
+    private enum TranslationHeightUpdate {
+        case none
+        case deferred
+        case immediate
+    }
+
     /// Apply bilingual / single-language layout for the current message.
-    private func refreshTranslationUI(translated: String) {
+    private func refreshTranslationUI(translated: String, heightUpdate: TranslationHeightUpdate) {
         guard let key = representedMessageKey else { return }
         let bilingual = TranslationSettings.showBilingual
         let preferOriginal = TranslationDisplayStore.showsOriginal(
@@ -1498,8 +1510,26 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 showTranslation(translated, style: .translationOnly)
             }
         }
-        // 高度随原文/译文切换变化，需立即让列表重新测量，避免必须滚动才正常
-        requestMessageHeightUpdate()
+
+        bubbleContentNeedsMeasurement = true
+        setNeedsLayout()
+        invalidateIntrinsicContentSize()
+
+        switch heightUpdate {
+        case .none:
+            break
+        case .deferred:
+            scheduleDeferredHeightUpdate()
+        case .immediate:
+            requestMessageHeightUpdate(force: true)
+        }
+    }
+
+    private func scheduleDeferredHeightUpdate() {
+        // 等当前 runloop 结束再测高度，并在滚动中跳过 invalidate
+        DispatchQueue.main.async { [weak self] in
+            self?.requestMessageHeightUpdate(force: false)
+        }
     }
 
     private enum TranslationLabelStyle {
@@ -1557,29 +1587,42 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         translationLabel.accessibilityHint = "点击切换原文与译文"
     }
 
-    /// Force self-sizing cell to remeasure after translation visibility changes.
-    private func requestMessageHeightUpdate() {
+    /// Remeasure self-sizing cell after translation visibility changes.
+    /// - Parameter force: user-driven toggle; still skips full invalidate while the list is scrolling.
+    private func requestMessageHeightUpdate(force: Bool) {
+        guard window != nil else { return }
         bubbleContentNeedsMeasurement = true
         setNeedsLayout()
         contentView.setNeedsLayout()
         bubbleStack.setNeedsLayout()
         invalidateIntrinsicContentSize()
-        layoutIfNeeded()
 
-        // Notify ChatView to preserve viewport while height settles.
-        onSelfSizingHeightChange?()
-
-        // Invalidate collection layout so preferredLayoutAttributesFitting runs without waiting for scroll.
+        var collectionView: UICollectionView?
         var ancestor: UIView? = superview
         while let view = ancestor {
-            if let collectionView = view as? UICollectionView {
-                UIView.performWithoutAnimation {
-                    collectionView.collectionViewLayout.invalidateLayout()
-                    collectionView.layoutIfNeeded()
-                }
+            if let cv = view as? UICollectionView {
+                collectionView = cv
                 break
             }
             ancestor = view.superview
+        }
+
+        let scrolling = collectionView.map {
+            $0.isDragging || $0.isDecelerating || $0.isTracking
+        } ?? false
+
+        // 滚动中禁止 invalidateLayout / layoutIfNeeded，否则易闪退
+        if scrolling {
+            return
+        }
+
+        layoutIfNeeded()
+        onSelfSizingHeightChange?()
+
+        guard force, let collectionView else { return }
+        UIView.performWithoutAnimation {
+            collectionView.collectionViewLayout.invalidateLayout()
+            collectionView.layoutIfNeeded()
         }
     }
 
