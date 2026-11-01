@@ -404,8 +404,9 @@ final class ChatTypeViewController: SettingsListViewController {
         let membersOnly = isDiscussion && joinToSend != supergroup?.joinToSendMessages ? joinToSend : nil
         let approval = offersApproval && joinByRequest != supergroup?.joinByRequest ? joinByRequest : nil
         let appliesToInviteLinks = appliesApprovalToInviteLinks
-        let hasOtherUsernames = (supergroup?.usernames?.activeUsernames ?? []).contains { $0 != savedUsername }
-        let savedUsername = savedUsername
+        // Capture the property once so the Task closure does not race a local of the same name (Xcode 26.3).
+        let existingUsername = savedUsername
+        let hasOtherUsernames = (supergroup?.usernames?.activeUsernames ?? []).contains { $0 != existingUsername }
         Task { [weak self] in
             do {
                 if let protects {
@@ -437,7 +438,7 @@ final class ChatTypeViewController: SettingsListViewController {
                         ))
                     }
                     if let newUsername {
-                        if newUsername != savedUsername {
+                        if newUsername != existingUsername {
                             _ = try await client.send(TDNativeRequests.setSupergroupUsername(
                                 supergroupId: supergroupID, username: newUsername,
                             ))

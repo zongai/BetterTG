@@ -12237,6 +12237,8 @@ final class ChatViewController: UIViewController, UICollectionViewDelegate, UICo
             seedChats: seedChats,
             initialMode: initialMode,
         )
+        // Declared before the closures so Xcode 26.3 does not treat the capture as "before declaration".
+        let navigationController = TelegramNavigationController(rootViewController: picker)
         picker.onSelect = { [weak self] chat, topic, draft in
             guard let self, TDLib.shared.activeAccountID == accountID,
                   TDLib.shared.activeClient.id == chatVM.client.id else { return }
@@ -12272,7 +12274,6 @@ final class ChatViewController: UIViewController, UICollectionViewDelegate, UICo
             }
             forward(draft, to: chats, comment: comment)
         }
-        let navigationController = TelegramNavigationController(rootViewController: picker)
         navigationController.modalPresentationStyle = .fullScreen
         present(navigationController, animated: true)
     }
