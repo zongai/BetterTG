@@ -446,16 +446,6 @@ final class TranslationEngineOrderViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool { true }
 
-    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath)
-        -> UITableViewCell.EditingStyle
-    {
-        .none
-    }
-
-    override func tableView(_ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath) -> Bool {
-        false
-    }
-
     override func tableView(
         _ tableView: UITableView,
         moveRowAt sourceIndexPath: IndexPath,
