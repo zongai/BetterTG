@@ -12,6 +12,19 @@ enum TranslationSettings {
         set { UserDefaults.standard.set(newValue, forKey: prefix + "autoTranslateNonTarget") }
     }
 
+    /// When true, show original text and translation together.
+    /// When false, show one language at a time; tap a message to switch.
+    /// Defaults to `true` (bilingual).
+    static var showBilingual: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: prefix + "showBilingual") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: prefix + "showBilingual")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: prefix + "showBilingual") }
+    }
+
     /// BCP-47 / Telegram-style target language code (e.g. zh, en, ja).
     static var targetLanguage: String {
         get {

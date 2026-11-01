@@ -255,18 +255,21 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     private let structuredContentView = MessageStructuredContentView()
     private let textView = MessageTextContentView()
 
-    /// Fork: auto-translated body shown under the original text.
+    /// Fork: auto-translated body shown under the original text (or alone when bilingual is off).
     private let translationLabel: UILabel = {
         let label = UILabel()
         label.numberOfLines = 0
         label.font = .systemFont(ofSize: 15)
         label.textColor = .secondaryLabel
         label.isHidden = true
+        label.isUserInteractionEnabled = true
         return label
     }()
     private var translationObserver: NSObjectProtocol?
     private var representedMessageKey: (chatID: Int64, messageID: Int64)?
     private var representedSourceText: String?
+    private var representedTranslatedText: String?
+    private var translationTapRecognizer: UITapGestureRecognizer?
     private let textSpoilers = MessageTextSpoilerStore()
     private var spoilerSubscriptions = Set<AnyCancellable>()
     private var refreshSpoilerAccessibility: (() -> Void)?
@@ -631,6 +634,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         translationLabel.attributedText = nil
         representedMessageKey = nil
         representedSourceText = nil
+        representedTranslatedText = nil
         mediaView.setHiddenIfChanged(true)
         structuredContentView.isHidden = true
         reactionView.isHidden = true
@@ -1391,10 +1395,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     }
 
 
-    /// Fork: show cached auto-translation under the message text; observe store updates for this cell.
+    /// Fork: show cached auto-translation; support bilingual vs single-language + per-message toggle.
     private func applyTranslationDisplay(chatID: Int64, messageID: Int64, sourceText: String) {
         representedMessageKey = (chatID, messageID)
         representedSourceText = sourceText
+        representedTranslatedText = nil
+        ensureTranslationTapGesture()
         if translationObserver == nil {
             translationObserver = NotificationCenter.default.addObserver(
                 forName: TranslationMessageStore.didUpdateNotification,
@@ -1414,7 +1420,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                     messageID: m,
                     sourceText: source
                 ) {
-                    self.showTranslation(translated)
+                    self.representedTranslatedText = translated
+                    self.refreshTranslationUI(translated: translated)
                 }
             }
         }
@@ -1422,6 +1429,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         guard TranslationSettings.autoTranslateNonTarget else {
             translationLabel.isHidden = true
             translationLabel.attributedText = nil
+            textView.isHidden = false
             return
         }
         if let translated = TranslationMessageStore.shared.translatedText(
@@ -1429,10 +1437,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             messageID: messageID,
             sourceText: sourceText
         ) {
-            showTranslation(translated)
+            representedTranslatedText = translated
+            refreshTranslationUI(translated: translated)
         } else {
             translationLabel.isHidden = true
             translationLabel.attributedText = nil
+            textView.isHidden = false
             Task { @MainActor in
                 _ = await AutoTranslator.shared.translateIfNeeded(
                     chatID: chatID,
@@ -1443,25 +1453,109 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         }
     }
 
-    private func showTranslation(_ text: String) {
+    private func ensureTranslationTapGesture() {
+        if translationTapRecognizer == nil {
+            let tap = UITapGestureRecognizer(target: self, action: #selector(translationLabelTapped))
+            translationLabel.addGestureRecognizer(tap)
+            translationTapRecognizer = tap
+        }
+    }
+
+    @objc private func translationLabelTapped() {
+        guard let key = representedMessageKey,
+              representedTranslatedText != nil
+        else { return }
+        // Toggle per-message preference and refresh.
+        _ = TranslationDisplayStore.toggle(chatID: key.chatID, messageID: key.messageID)
+        if let translated = representedTranslatedText {
+            refreshTranslationUI(translated: translated)
+        }
+    }
+
+    /// Apply bilingual / single-language layout for the current message.
+    private func refreshTranslationUI(translated: String) {
+        guard let key = representedMessageKey else { return }
+        let bilingual = TranslationSettings.showBilingual
+        let preferOriginal = TranslationDisplayStore.showsOriginal(
+            chatID: key.chatID,
+            messageID: key.messageID
+        )
+
+        if bilingual {
+            // 原文 + 译文；点击译文区域可隐藏译文（仅原文），再点「显示译文」恢复
+            textView.isHidden = false
+            if preferOriginal {
+                showTranslation("", style: .showTranslationHint)
+            } else {
+                showTranslation(translated, style: .bilingual)
+            }
+        } else {
+            // 单语：默认译文，点击在原文 ↔ 译文之间切换
+            if preferOriginal {
+                textView.isHidden = false
+                showTranslation("", style: .showTranslationHint)
+            } else {
+                textView.isHidden = true
+                showTranslation(translated, style: .translationOnly)
+            }
+        }
+        setNeedsLayout()
+        invalidateIntrinsicContentSize()
+    }
+
+    private enum TranslationLabelStyle {
+        case bilingual
+        case translationOnly
+        /// Compact tappable hint when currently showing original only.
+        case showTranslationHint
+    }
+
+    private func showTranslation(_ text: String, style: TranslationLabelStyle) {
         let attr = NSMutableAttributedString()
-        attr.append(NSAttributedString(
-            string: "翻译\n",
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: UIColor.tertiaryLabel,
-            ]
-        ))
-        attr.append(NSAttributedString(
-            string: text,
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 15),
-                .foregroundColor: UIColor.secondaryLabel,
-            ]
-        ))
+        switch style {
+        case .bilingual:
+            attr.append(NSAttributedString(
+                string: "翻译 · 点击切换\n",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .foregroundColor: UIColor.tertiaryLabel,
+                ]
+            ))
+            attr.append(NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 15),
+                    .foregroundColor: UIColor.secondaryLabel,
+                ]
+            ))
+        case .translationOnly:
+            attr.append(NSAttributedString(
+                string: "译文 · 点击查看原文\n",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .foregroundColor: UIColor.tertiaryLabel,
+                ]
+            ))
+            attr.append(NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 16),
+                    .foregroundColor: UIColor.label,
+                ]
+            ))
+        case .showTranslationHint:
+            attr.append(NSAttributedString(
+                string: "显示译文",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .foregroundColor: UIColor.systemBlue,
+                ]
+            ))
+        }
         translationLabel.attributedText = attr
         translationLabel.isHidden = false
-        translationLabel.accessibilityValue = text
+        translationLabel.accessibilityValue = text.isEmpty ? "显示译文" : text
+        translationLabel.accessibilityHint = "点击切换原文与译文"
         setNeedsLayout()
     }
 

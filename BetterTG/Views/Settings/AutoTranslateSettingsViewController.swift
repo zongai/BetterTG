@@ -23,12 +23,19 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         return [
             SettingsSection(
                 header: nil,
-                footer: "开启后，可见消息若不是目标语言，将按下方引擎顺序自动翻译并显示在气泡中。",
+                footer: "开启后，可见消息若不是目标语言，将按下方引擎顺序自动翻译。可点消息上的「翻译」区域切换原文/译文。",
                 rows: [
                     SettingsRow(
                         title: "自动翻译非目标语言",
                         accessory: .toggle(isOn: TranslationSettings.autoTranslateNonTarget, onChange: { [weak self] on in
                             TranslationSettings.autoTranslateNonTarget = on
+                            self?.reload()
+                        }),
+                    ),
+                    SettingsRow(
+                        title: "显示双语",
+                        accessory: .toggle(isOn: TranslationSettings.showBilingual, onChange: { [weak self] on in
+                            TranslationSettings.showBilingual = on
                             self?.reload()
                         }),
                     ),
