@@ -146,16 +146,14 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         title = "DeepL Keys"
         navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "key")
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(addTapped)),
-            editButtonItem,
-        ]
         updateEmptyHint()
+        refreshBarButtons()
     }
 
     private func persist() {
         TranslationSettings.deeplAPIKeys = keys
         updateEmptyHint()
+        refreshBarButtons()
     }
 
     private func updateEmptyHint() {
@@ -170,9 +168,26 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
         } else {
             tableView.backgroundView = nil
         }
-        navigationItem.leftBarButtonItem = keys.isEmpty
-            ? nil
-            : UIBarButtonItem(title: "清空", style: .plain, target: self, action: #selector(clearTapped))
+    }
+
+    /// Keep back button free: put add / edit / clear on the trailing side only.
+    private func refreshBarButtons() {
+        var trailing: [UIBarButtonItem] = [
+            UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(addTapped)),
+            editButtonItem,
+        ]
+        if !keys.isEmpty {
+            trailing.append(
+                UIBarButtonItem(
+                    image: UIImage(systemName: "trash"),
+                    style: .plain,
+                    target: self,
+                    action: #selector(clearTapped)
+                )
+            )
+        }
+        navigationItem.rightBarButtonItems = trailing
+        navigationItem.leftBarButtonItem = nil
     }
 
     private static func masked(_ key: String) -> String {

@@ -131,11 +131,6 @@ final class KeywordListManagerViewController: UITableViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "keyword")
         tableView.keyboardDismissMode = .onDrag
 
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(addTapped)),
-            editButtonItem,
-        ]
-
         emptyLabel.text = mode.emptyHint
         tableView.backgroundView = UIView()
         tableView.backgroundView?.addSubview(emptyLabel)
@@ -145,7 +140,7 @@ final class KeywordListManagerViewController: UITableViewController {
             emptyLabel.centerYAnchor.constraint(equalTo: tableView.backgroundView!.centerYAnchor),
         ])
         updateEmptyState()
-        updateClearButton()
+        refreshBarButtons()
     }
 
     private func persist() {
@@ -154,24 +149,31 @@ final class KeywordListManagerViewController: UITableViewController {
         case .whitelist: ContentFilterSettings.whitelist = items
         }
         updateEmptyState()
-        updateClearButton()
+        refreshBarButtons()
     }
 
     private func updateEmptyState() {
         emptyLabel.isHidden = !items.isEmpty
     }
 
-    private func updateClearButton() {
-        if items.isEmpty {
-            navigationItem.leftBarButtonItem = nil
-        } else {
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: "清空",
-                style: .plain,
-                target: self,
-                action: #selector(clearAllTapped)
+    /// Keep back button free: put add / edit / clear on the trailing side only.
+    private func refreshBarButtons() {
+        var trailing: [UIBarButtonItem] = [
+            UIBarButtonItem(image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(addTapped)),
+            editButtonItem,
+        ]
+        if !items.isEmpty {
+            trailing.append(
+                UIBarButtonItem(
+                    image: UIImage(systemName: "trash"),
+                    style: .plain,
+                    target: self,
+                    action: #selector(clearAllTapped)
+                )
             )
         }
+        navigationItem.rightBarButtonItems = trailing
+        navigationItem.leftBarButtonItem = nil
     }
 
     // MARK: Actions
