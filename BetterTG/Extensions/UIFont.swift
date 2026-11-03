@@ -7,6 +7,8 @@ extension UIFont {
     static let bold = UIFont.boldSystemFont(ofSize: 17)
     static let italic = UIFont.italicSystemFont(ofSize: 17)
 
-    static let body = UIFont.systemFont(ofSize: 17)
+    /// Message body font; respects fork message text scale.
+    static var body: UIFont { MessageAppearanceSettings.bodyFont }
+
     static let caption = UIFont.systemFont(ofSize: 12)
 }

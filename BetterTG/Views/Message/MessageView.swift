@@ -1422,14 +1422,15 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 ) {
                     self.representedTranslatedText = translated
                     // 异步译文到达：更新内容，高度仅在非滚动时安全刷新
-                    self.refreshTranslationUI(translated: translated, heightUpdate: .deferred)
+                    self.refreshTranslationUI(translated: translated, heightUpdate: .deferred, animated: true)
                 }
             }
         }
 
-        guard TranslationSettings.autoTranslateNonTarget else {
+        guard TranslationSettings.isAutoTranslateEnabled(chatID: chatID) else {
             translationLabel.isHidden = true
             translationLabel.attributedText = nil
+            translationLabel.alpha = 1
             textView.isHidden = false
             return
         }
@@ -1440,11 +1441,11 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         ) {
             representedTranslatedText = translated
             // 配置/复用 cell 时只改 UI，不 invalidate 列表（滚动中 invalidate 会闪退）
-            refreshTranslationUI(translated: translated, heightUpdate: .none)
+            refreshTranslationUI(translated: translated, heightUpdate: .none, animated: false)
         } else {
-            translationLabel.isHidden = true
-            translationLabel.attributedText = nil
+            // 第三方常见做法：先显示「翻译中」占位，译文到达后淡入替换
             textView.isHidden = false
+            showTranslationLoadingPlaceholder()
             let capturedChat = chatID
             let capturedMessage = messageID
             let capturedText = sourceText
@@ -1456,6 +1457,19 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 )
             }
         }
+    }
+
+    private func showTranslationLoadingPlaceholder() {
+        let attr = NSMutableAttributedString(
+            string: "翻译中…",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 12 * MessageAppearanceSettings.textScale, weight: .medium),
+                .foregroundColor: UIColor.tertiaryLabel,
+            ]
+        )
+        translationLabel.attributedText = attr
+        translationLabel.isHidden = false
+        translationLabel.alpha = 0.7
     }
 
     private func ensureTranslationTapGesture() {
@@ -1473,7 +1487,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         _ = TranslationDisplayStore.toggle(chatID: key.chatID, messageID: key.messageID)
         if let translated = representedTranslatedText {
             // 用户主动切换：需要立刻重测高度
-            refreshTranslationUI(translated: translated, heightUpdate: .immediate)
+            refreshTranslationUI(translated: translated, heightUpdate: .immediate, animated: true)
         }
     }
 
@@ -1484,7 +1498,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     }
 
     /// Apply bilingual / single-language layout for the current message.
-    private func refreshTranslationUI(translated: String, heightUpdate: TranslationHeightUpdate) {
+    private func refreshTranslationUI(translated: String, heightUpdate: TranslationHeightUpdate, animated: Bool) {
         guard let key = representedMessageKey else { return }
         let bilingual = TranslationSettings.showBilingual
         let preferOriginal = TranslationDisplayStore.showsOriginal(
@@ -1510,6 +1524,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                 showTranslation(translated, style: .translationOnly)
             }
         }
+
+        applyTranslationFadeInIfNeeded(animated)
 
         bubbleContentNeedsMeasurement = true
         setNeedsLayout()
@@ -1546,14 +1562,14 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             attr.append(NSAttributedString(
                 string: "翻译 · 点击切换\n",
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .font: UIFont.systemFont(ofSize: 12 * MessageAppearanceSettings.textScale, weight: .medium),
                     .foregroundColor: UIColor.tertiaryLabel,
                 ]
             ))
             attr.append(NSAttributedString(
                 string: text,
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 15),
+                    .font: MessageAppearanceSettings.translationFont,
                     .foregroundColor: UIColor.secondaryLabel,
                 ]
             ))
@@ -1561,14 +1577,14 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             attr.append(NSAttributedString(
                 string: "译文 · 点击查看原文\n",
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .font: UIFont.systemFont(ofSize: 12 * MessageAppearanceSettings.textScale, weight: .medium),
                     .foregroundColor: UIColor.tertiaryLabel,
                 ]
             ))
             attr.append(NSAttributedString(
                 string: text,
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 16),
+                    .font: MessageAppearanceSettings.bodyFont,
                     .foregroundColor: UIColor.label,
                 ]
             ))
@@ -1576,7 +1592,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             attr.append(NSAttributedString(
                 string: "显示译文",
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                    .font: UIFont.systemFont(ofSize: 12 * MessageAppearanceSettings.textScale, weight: .medium),
                     .foregroundColor: UIColor.systemBlue,
                 ]
             ))
@@ -1585,6 +1601,18 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         translationLabel.isHidden = false
         translationLabel.accessibilityValue = text.isEmpty ? "显示译文" : text
         translationLabel.accessibilityHint = "点击切换原文与译文"
+        // 字号跟随消息文字大小设置
+    }
+
+    private func applyTranslationFadeInIfNeeded(_ animated: Bool) {
+        if animated {
+            translationLabel.alpha = 0
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
+                self.translationLabel.alpha = 1
+            }
+        } else {
+            translationLabel.alpha = 1
+        }
     }
 
     /// Remeasure self-sizing cell after translation visibility changes.

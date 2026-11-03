@@ -1,5 +1,5 @@
 // AutoTranslator.swift
-// Message-level auto translation: language skip, engine failover, attribute store.
+// Message-level auto translation: language skip, engine failover, attribute + text cache.
 
 import Foundation
 import NaturalLanguage
@@ -13,8 +13,7 @@ final class AutoTranslator {
 
     private init() {}
 
-    /// Translate a message body when auto-translate is on and the text is not already the target language.
-    /// Writes `TranslationMessageAttribute` on success.
+    /// Translate a message body when auto-translate is on for this chat and the text is not target language.
     @discardableResult
     func translateIfNeeded(
         chatID: Int64,
@@ -22,7 +21,7 @@ final class AutoTranslator {
         text: String,
         knownSourceLanguage: String? = nil
     ) async -> String? {
-        guard TranslationSettings.autoTranslateNonTarget else { return nil }
+        guard TranslationSettings.isAutoTranslateEnabled(chatID: chatID) else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -40,14 +39,15 @@ final class AutoTranslator {
             return nil
         }
 
-        let flightKey = "\(chatID):\(messageID):\(target):\(trimmed.hashValue)"
+        let contentHash = TranslationCache.stableHash(of: trimmed)
+        let flightKey = "\(chatID):\(messageID):\(target):\(contentHash)"
         guard !inFlight.contains(flightKey) else { return nil }
         inFlight.insert(flightKey)
         defer { inFlight.remove(flightKey) }
 
         let chain = coordinator.effectiveChain(configured: TranslationSettings.engineChain)
         for engine in chain {
-            if engine == .deepl, TranslationSettings.deeplAPIKey.isEmpty { continue }
+            if engine == .deepl, TranslationSettings.deeplAPIKeys.isEmpty { continue }
             if engine == .azure, TranslationSettings.azureAPIKey.isEmpty { continue }
             do {
                 let result = try await TranslationServices.translate(
@@ -78,14 +78,15 @@ final class AutoTranslator {
 
     /// Batch helper for a slice of chat messages (used by ChatVM).
     func translateVisibleMessages(_ messages: [CustomMessage]) {
-        guard TranslationSettings.autoTranslateNonTarget else { return }
         let slice = Array(messages.prefix(50))
         Task { @MainActor in
             for message in slice {
+                let chatID = message.message.chatId
+                guard TranslationSettings.isAutoTranslateEnabled(chatID: chatID) else { continue }
                 let text = message.formattedText?.text ?? ""
                 guard !text.isEmpty else { continue }
                 _ = await translateIfNeeded(
-                    chatID: message.message.chatId,
+                    chatID: chatID,
                     messageID: message.id,
                     text: text
                 )
@@ -109,7 +110,6 @@ final class AutoTranslator {
         var c = code.lowercased()
         if c.hasSuffix("-raw") { c = String(c.dropLast(4)) }
         if c.count > 3, c.contains("-") {
-            // keep zh-cn style for zh comparison via hasPrefix
             return c
         }
         return String(c.prefix(2))

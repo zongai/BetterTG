@@ -20,10 +20,13 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         let chainDetail = chain.map(\.displayName).joined(separator: " → ")
         let keyCount = TranslationSettings.deeplAPIKeys.count
 
+        let overrides = TranslationSettings.overriddenChatIDs
+        let cacheCount = TranslationCache.shared.count
+
         return [
             SettingsSection(
                 header: nil,
-                footer: "开启后，可见消息若不是目标语言，将按下方引擎顺序自动翻译。可点消息上的「翻译」区域切换原文/译文。",
+                footer: "全局开关为默认；可在「聊天例外」为单个群组/频道单独开启或关闭。消息上的翻译区域可点击切换原文/译文。",
                 rows: [
                     SettingsRow(
                         title: "自动翻译非目标语言",
@@ -44,6 +47,34 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
                         detail: TranslationSettings.targetLanguage,
                         accessory: .disclosure,
                         action: { [weak self] in self?.pickTargetLanguage() }
+                    ),
+                    SettingsRow(
+                        title: "聊天例外",
+                        detail: overrides.isEmpty ? "无" : "\(overrides.count) 个",
+                        accessory: .disclosure,
+                        action: { [weak self] in
+                            self?.navigationController?.pushViewController(
+                                TranslationChatOverridesViewController(),
+                                animated: true
+                            )
+                        }
+                    ),
+                ]
+            ),
+            SettingsSection(
+                header: "缓存",
+                footer: "相同原文会复用译文，减少重复请求。清空后需重新翻译。",
+                rows: [
+                    SettingsRow(
+                        title: "翻译缓存",
+                        detail: "\(cacheCount) 条",
+                        accessory: .none
+                    ),
+                    SettingsRow(
+                        title: "清空翻译缓存",
+                        style: .subtitle,
+                        accessory: .disclosure,
+                        action: { [weak self] in self?.clearTranslationCache() }
                     ),
                 ]
             ),

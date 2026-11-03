@@ -1,5 +1,5 @@
 // TranslationMessageAttribute.swift
-// In-memory + disk-backed per-message translation attribute (fork).
+// Per-message attribute + integration with text-level TranslationCache.
 
 import Foundation
 
@@ -7,7 +7,7 @@ import Foundation
 struct TranslationMessageAttribute: Codable, Equatable, Sendable {
     var messageID: Int64
     var chatID: Int64
-    var sourceTextHash: Int
+    var sourceTextHash: String
     var targetLanguage: String
     var translatedText: String
     var engine: String
@@ -22,7 +22,7 @@ final class TranslationMessageStore {
     static let didUpdateNotification = Notification.Name("BetterTG.fork.translationMessageDidUpdate")
 
     private var attributes: [String: TranslationMessageAttribute] = [:]
-    private let diskKey = "BetterTG.fork.translation.attributes"
+    private let diskKey = "BetterTG.fork.translation.attributes.v2"
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: diskKey),
@@ -43,9 +43,14 @@ final class TranslationMessageStore {
 
     func translatedText(chatID: Int64, messageID: Int64, sourceText: String) -> String? {
         let t = TranslationSettings.targetLanguage.lowercased()
-        guard let attr = attributes[key(chatID: chatID, messageID: messageID, target: t)] else { return nil }
-        guard attr.sourceTextHash == sourceText.hashValue else { return nil }
-        return attr.translatedText
+        let hash = TranslationCache.stableHash(of: sourceText)
+        if let attr = attributes[key(chatID: chatID, messageID: messageID, target: t)],
+           attr.sourceTextHash == hash
+        {
+            return attr.translatedText
+        }
+        // Fall back to global text cache (same text in other chats / messages).
+        return TranslationCache.shared.text(for: sourceText, target: t)
     }
 
     func set(
@@ -56,16 +61,23 @@ final class TranslationMessageStore {
         engine: TranslationEngine
     ) {
         let t = TranslationSettings.targetLanguage.lowercased()
+        let hash = TranslationCache.stableHash(of: sourceText)
         let attr = TranslationMessageAttribute(
             messageID: messageID,
             chatID: chatID,
-            sourceTextHash: sourceText.hashValue,
+            sourceTextHash: hash,
             targetLanguage: t,
             translatedText: translatedText,
             engine: engine.rawValue,
             updatedAt: Date()
         )
         attributes[key(chatID: chatID, messageID: messageID, target: t)] = attr
+        TranslationCache.shared.set(
+            sourceText: sourceText,
+            translatedText: translatedText,
+            target: t,
+            engine: engine
+        )
         persist()
         NotificationCenter.default.post(
             name: Self.didUpdateNotification,
@@ -75,6 +87,11 @@ final class TranslationMessageStore {
                 "messageID": messageID,
             ]
         )
+    }
+
+    func clearMessageAttributes() {
+        attributes.removeAll()
+        UserDefaults.standard.removeObject(forKey: diskKey)
     }
 
     private func persist() {

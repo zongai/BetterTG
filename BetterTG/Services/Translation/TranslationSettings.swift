@@ -104,6 +104,52 @@ enum TranslationSettings {
         set { UserDefaults.standard.set(newValue, forKey: prefix + "azureRegion") }
     }
 
+    // MARK: - Per-chat overrides
+
+    /// chatID string → explicit on/off. Missing key = inherit global `autoTranslateNonTarget`.
+    private static var chatOverrides: [String: Bool] {
+        get {
+            (UserDefaults.standard.dictionary(forKey: prefix + "chatOverrides") as? [String: Bool]) ?? [:]
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: prefix + "chatOverrides")
+        }
+    }
+
+    /// Effective auto-translate for a chat (override ?? global).
+    static func isAutoTranslateEnabled(chatID: Int64) -> Bool {
+        if let override = chatOverrides[String(chatID)] {
+            return override
+        }
+        return autoTranslateNonTarget
+    }
+
+    static func setAutoTranslate(_ enabled: Bool, chatID: Int64) {
+        var map = chatOverrides
+        // If same as global, clear override to keep map small.
+        if enabled == autoTranslateNonTarget {
+            map.removeValue(forKey: String(chatID))
+        } else {
+            map[String(chatID)] = enabled
+        }
+        chatOverrides = map
+    }
+
+    static func clearChatOverride(chatID: Int64) {
+        var map = chatOverrides
+        map.removeValue(forKey: String(chatID))
+        chatOverrides = map
+    }
+
+    /// Chats with an explicit override (for settings UI).
+    static var overriddenChatIDs: [(chatID: Int64, enabled: Bool)] {
+        chatOverrides.compactMap { key, value in
+            guard let id = Int64(key) else { return nil }
+            return (id, value)
+        }
+        .sorted { $0.chatID < $1.chatID }
+    }
+
     private static func normalizedKeys(_ values: [String]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
