@@ -28,11 +28,14 @@
 
 ### 自动翻译约定
 
-- 设置：自动翻译开关、**显示双语**、目标语言、引擎顺序、DeepL 多 Key、Azure Key
+- 设置：自动翻译开关、**显示双语**、目标语言、引擎顺序、DeepL 多 Key、Azure Key、**聊天例外**、**翻译缓存**
 - 引擎默认链：Google → Bing → DeepL → Azure → MyMemory（可排序/禁用）
 - Google / Bing / MyMemory **免 Key**；DeepL 支持多 Key 轮换；Azure 需 Key
+- **文本级缓存**（SHA256）：相同原文跨消息复用；可在设置清空
+- **按聊天覆盖**：`isAutoTranslateEnabled(chatID:)` = 例外 ?? 全局开关
 - 双语开：原文 + 译文；双语关：默认译文，点击切换原文/译文
-- 滚动中**禁止**对 `UICollectionView` 做 `invalidateLayout()`（会闪退）；仅用户点击切换且非滚动时强制重测高度
+- 显示：先「翻译中…」，译文到达后淡入；滚动中禁止 `invalidateLayout()`
+- 消息字号：设置 → BetterTG 扩展 → 消息文字大小（85%–150%）
 - 不破坏官方 translateChats / Premium 流程
 
 ### 内容过滤约定
