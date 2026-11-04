@@ -602,6 +602,10 @@ final class MainViewController: UIViewController, UIPageViewControllerDataSource
 
     private func configureFolderPicker() {
         folderPicker.translatesAutoresizingMaskIntoConstraints = false
+        // Fork: 底部全宽 Dock（参考第三方底栏），分段均分，避免中间一颗「全部」胶囊
+        folderPicker.controlHorizontalInset = 12
+        folderPicker.compressesSegmentsToFit = true
+        folderPicker.usesDockStyle = true
         folderPicker.onSelection = { [weak self] id in self?.selectFolder(id: id, animated: true) }
         folderPicker.onReselection = { [weak self] id in
             self?.folderControllers.first(where: { $0.folder.id == id })?.scrollToTop()
@@ -1366,6 +1370,11 @@ final class FolderPickerView: UIView {
         }
     }
 
+    /// Fork: full-width bottom dock (Harbor-like) instead of a floating center capsule.
+    var usesDockStyle = false {
+        didSet { applyDockStyleIfNeeded() }
+    }
+
     /// Whether a touch lifts the lens onto the touched segment, the lens follows the finger and letting go selects
     /// the segment under it, as Telegram's keyboard tabs (EntityKeyboardBottomPanelComponent) do; such a strip does
     /// not scroll. The composer's media tabs fit; the chat list's folders scroll and keep holding for their menus.
@@ -1465,11 +1474,12 @@ final class FolderPickerView: UIView {
         applyItems(
             folders.map { folder in
                 let style = folder.tabStyle
+                let iconOnlyDock = usesDockStyle && style != .nameOnly
                 return Item(
                     id: folder.id,
                     title: folder.name,
-                    icon: style == .nameOnly ? nil : folder.icon,
-                    showsTitle: style != .iconOnly,
+                    icon: style == .nameOnly ? nil : (folder.icon ?? .all),
+                    showsTitle: iconOnlyDock ? false : (style != .iconOnly),
                 )
             },
             selectedID: selectedID,
@@ -1516,6 +1526,21 @@ final class FolderPickerView: UIView {
         rebuildControl()
     }
 
+    private func applyDockStyleIfNeeded() {
+        guard controlEffectView.superview != nil else { return }
+        if usesDockStyle {
+            // 全宽底栏圆角，接近图二 Dock，而不是中间悬浮胶囊
+            controlEffectView.layer.cornerRadius = 24
+            controlEffectView.cornerConfiguration = .corners(radius: .fixed(24))
+            controlHorizontalInset = min(controlHorizontalInset, 12)
+        } else {
+            controlEffectView.layer.cornerRadius = 21
+            controlEffectView.cornerConfiguration = .capsule()
+        }
+        updateControlInsets()
+        setNeedsLayout()
+    }
+
     private func updateControlInsets() {
         // A panel at the bottom edge spans iPhone Duo's strip; the composer's media panel stays with the composer.
         let outset = superview?.iPhoneDuoLayout == nil ? 0 : iPhoneDuoBottomEdgeRightOutset
@@ -1536,6 +1561,7 @@ final class FolderPickerView: UIView {
         controlEffectView.cornerConfiguration = .capsule()
         controlEffectView.clipsToBounds = true
         liftedContainer.addSubview(controlEffectView)
+        applyDockStyleIfNeeded()
 
         controlContainer.translatesAutoresizingMaskIntoConstraints = false
         // The capsule keeps the strip off the screen's edges; a safe area around it, such as the search filters' over
