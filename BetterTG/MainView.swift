@@ -1534,10 +1534,14 @@ final class FolderPickerView: UIView {
             if controlHorizontalInset > 10 {
                 controlHorizontalInset = 10
             }
-            // 圆角在 updateDockSpan 里按「单钮 / 多页」切换
+            // 不要整条底部毛玻璃背景，只保留圆钮/底栏本身
+            blurView.isHidden = true
+            blurView.alpha = 0
         } else {
             controlEffectView.layer.cornerRadius = 21
             controlEffectView.cornerConfiguration = .capsule()
+            blurView.isHidden = false
+            blurView.alpha = 1
         }
         updateControlInsets()
         updateDockSpan()

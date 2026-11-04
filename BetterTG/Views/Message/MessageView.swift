@@ -417,6 +417,17 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     override func preferredLayoutAttributesFitting(
         _ layoutAttributes: UICollectionViewLayoutAttributes,
     ) -> UICollectionViewLayoutAttributes {
+        // 必须先用目标 cell 宽度测气泡，否则群组满宽会按旧 bounds 算出「内容宽度」
+        let targetWidth = layoutAttributes.size.width
+        if targetWidth > 0, abs(bounds.width - targetWidth) > 0.5 {
+            bounds.size.width = targetWidth
+        }
+        if targetWidth > 0 {
+            bubbleContentNeedsMeasurement = true
+            updateBubbleWidth(for: targetWidth)
+            setNeedsLayout()
+            layoutIfNeeded()
+        }
         let fitted = super.preferredLayoutAttributesFitting(layoutAttributes)
         if window != nil, abs(fitted.size.height - layoutAttributes.size.height) > 0.5 {
             onSelfSizingHeightChange?()
@@ -2117,6 +2128,14 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         // 群组/频道：无论图文/纯文，气泡一律拉满可用宽度（不再跟随图片固有宽度）
         if usesFullWidthBubble {
             preferredBubbleWidth = maximumBubbleWidth
+            // required，避免与 hugging / 其它宽度约束打架仍缩回内容宽
+            bubbleWidthConstraint.priority = .required
+            bubbleColumn.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            bubbleColumn.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        } else {
+            bubbleWidthConstraint.priority = UILayoutPriority(999)
+            bubbleColumn.setContentHuggingPriority(.required, for: .horizontal)
+            bubbleColumn.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {
             bubbleWidthConstraint.constant = preferredBubbleWidth
