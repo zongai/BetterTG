@@ -290,6 +290,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     private var bubbleWidthConstraint: NSLayoutConstraint!
     /// Caps bubble width: 0.82 of row for DMs, near-full for groups/channels (fork).
     private var bubbleMaxWidthConstraint: NSLayoutConstraint!
+    /// Groups/channels: width == contentView - margins (avoids content-sized bubbles).
+    private var bubbleFullWidthConstraint: NSLayoutConstraint?
     private lazy var bubbleTopConstraint = bubbleStack.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 6)
     private lazy var bubbleLeadingConstraint = bubbleStack.leadingAnchor.constraint(
         equalTo: bubbleView.leadingAnchor,
@@ -2084,7 +2086,9 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         guard cellWidth > 0, bubbleContentNeedsMeasurement || abs(measuredCellWidth - cellWidth) > 0.5 else { return }
         let maximumBubbleWidth = maximumBubbleWidth(for: cellWidth)
         if !mediaView.isHidden {
-            mediaView.updateMaximumWidth(maximumBubbleWidth)
+            // 群组满宽时媒体也按气泡满宽排，避免图本身偏窄造成「右边空白」
+            let mediaMax = usesFullWidthBubble ? max(maximumBubbleWidth, cellWidth - 8) : maximumBubbleWidth
+            mediaView.updateMaximumWidth(mediaMax)
         }
         let mediaWidth = usesFullBleedMedia && !mediaView.isHidden
             ? mediaView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
@@ -2125,23 +2129,47 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         if !inlineKeyboardView.isHidden, mediaWidth == 0 {
             preferredBubbleWidth = min(maximumBubbleWidth, max(preferredBubbleWidth, inlineKeyboardView.minimumWidth))
         }
-        // 群组/频道：无论图文/纯文，气泡一律拉满可用宽度（不再跟随图片固有宽度）
+        // 群组/频道：用「相对 contentView 等宽」约束拉满，避免 constant 与嵌套布局互相打架留下右侧空白
         if usesFullWidthBubble {
             preferredBubbleWidth = maximumBubbleWidth
-            // required，避免与 hugging / 其它宽度约束打架仍缩回内容宽
-            bubbleWidthConstraint.priority = .required
             bubbleColumn.setContentHuggingPriority(.defaultLow, for: .horizontal)
             bubbleColumn.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            applyFullWidthEquality(active: true)
+            // 仍写入 constant 作为兜底测量值
+            bubbleWidthConstraint.priority = UILayoutPriority(250)
+            if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {
+                bubbleWidthConstraint.constant = preferredBubbleWidth
+            }
         } else {
+            applyFullWidthEquality(active: false)
             bubbleWidthConstraint.priority = UILayoutPriority(999)
             bubbleColumn.setContentHuggingPriority(.required, for: .horizontal)
             bubbleColumn.setContentCompressionResistancePriority(.required, for: .horizontal)
-        }
-        if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {
-            bubbleWidthConstraint.constant = preferredBubbleWidth
+            if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {
+                bubbleWidthConstraint.constant = preferredBubbleWidth
+            }
         }
         measuredCellWidth = cellWidth
         bubbleContentNeedsMeasurement = false
+    }
+
+    private func applyFullWidthEquality(active: Bool) {
+        if active {
+            bubbleMaxWidthConstraint?.isActive = false
+            if bubbleFullWidthConstraint == nil {
+                // 左右各留 4pt，贴齐屏幕内容区
+                let c = bubbleContainerView.widthAnchor.constraint(
+                    equalTo: contentView.widthAnchor,
+                    constant: -8
+                )
+                c.priority = .required
+                bubbleFullWidthConstraint = c
+            }
+            bubbleFullWidthConstraint?.isActive = true
+        } else {
+            bubbleFullWidthConstraint?.isActive = false
+            bubbleMaxWidthConstraint?.isActive = true
+        }
     }
 
     private func reactionAccessibilityDescription(_ reactions: [MessageReaction]) -> String {
