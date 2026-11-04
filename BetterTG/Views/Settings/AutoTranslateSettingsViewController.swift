@@ -136,6 +136,21 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         ]
     }
 
+    private func clearTranslationCache() {
+        let alert = UIAlertController(
+            title: "清空翻译缓存？",
+            message: "已保存的译文将删除，需要时会重新请求。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "清空", style: .destructive) { [weak self] _ in
+            TranslationCache.shared.clear()
+            TranslationMessageStore.shared.clearMessageAttributes()
+            self?.reload()
+        })
+        present(alert, animated: true)
+    }
+
     private func pickTargetLanguage() {
         let alert = UIAlertController(title: "目标语言代码", message: "例如 zh、en、ja、ru", preferredStyle: .alert)
         alert.addTextField { $0.text = TranslationSettings.targetLanguage }
@@ -485,5 +500,108 @@ final class TranslationEngineOrderViewController: UITableViewController {
         let value = ordered.remove(at: sourceIndexPath.row)
         ordered.insert(value, at: destinationIndexPath.row)
         persist()
+    }
+}
+
+// MARK: - TranslationChatOverridesViewController
+
+/// Manage per-chat auto-translate overrides (chat ID list).
+final class TranslationChatOverridesViewController: UITableViewController {
+    private var rows: [(chatID: Int64, enabled: Bool)] = []
+
+    init() {
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "聊天例外"
+        navigationItem.largeTitleDisplayMode = .never
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "row")
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "添加",
+            style: .plain,
+            target: self,
+            action: #selector(addTapped)
+        )
+        reloadRows()
+    }
+
+    private func reloadRows() {
+        rows = TranslationSettings.overriddenChatIDs
+        tableView.reloadData()
+        if rows.isEmpty {
+            let label = UILabel()
+            label.text = "无例外\n默认跟随全局「自动翻译」开关\n可点右上角添加聊天 ID"
+            label.textAlignment = .center
+            label.numberOfLines = 0
+            label.textColor = .secondaryLabel
+            tableView.backgroundView = label
+        } else {
+            tableView.backgroundView = nil
+        }
+    }
+
+    @objc private func addTapped() {
+        let alert = UIAlertController(
+            title: "添加聊天例外",
+            message: "输入 chat ID（数字）。开启=此聊天强制自动翻译；关闭=此聊天不自动翻译。",
+            preferredStyle: .alert
+        )
+        alert.addTextField {
+            $0.placeholder = "chat ID"
+            $0.keyboardType = .numbersAndPunctuation
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "强制开启", style: .default) { [weak self] _ in
+            self?.saveOverride(from: alert, enabled: true)
+        })
+        alert.addAction(UIAlertAction(title: "强制关闭", style: .default) { [weak self] _ in
+            self?.saveOverride(from: alert, enabled: false)
+        })
+        present(alert, animated: true)
+    }
+
+    private func saveOverride(from alert: UIAlertController, enabled: Bool) {
+        let raw = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let id = Int64(raw) else { return }
+        TranslationSettings.setAutoTranslate(enabled, chatID: id)
+        reloadRows()
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        rows.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        "左滑可删除例外并恢复跟随全局设置。"
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath)
+        let row = rows[indexPath.row]
+        var config = cell.defaultContentConfiguration()
+        config.text = "Chat \(row.chatID)"
+        config.secondaryText = row.enabled ? "强制开启自动翻译" : "强制关闭自动翻译"
+        cell.contentConfiguration = config
+        cell.selectionStyle = .none
+        return cell
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, done in
+            guard let self else { done(false); return }
+            let id = self.rows[indexPath.row].chatID
+            TranslationSettings.clearChatOverride(chatID: id)
+            self.reloadRows()
+            done(true)
+        }
+        return UISwipeActionsConfiguration(actions: [delete])
     }
 }
