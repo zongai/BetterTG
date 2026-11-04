@@ -1532,7 +1532,9 @@ final class FolderPickerView: UIView {
             // 全宽底栏圆角，接近图二 Dock，而不是中间悬浮胶囊
             controlEffectView.layer.cornerRadius = 24
             controlEffectView.cornerConfiguration = .corners(radius: .fixed(24))
-            controlHorizontalInset = min(controlHorizontalInset, 12)
+            if controlHorizontalInset > 12 {
+                controlHorizontalInset = 12
+            }
         } else {
             controlEffectView.layer.cornerRadius = 21
             controlEffectView.cornerConfiguration = .capsule()
@@ -1542,6 +1544,8 @@ final class FolderPickerView: UIView {
     }
 
     private func updateControlInsets() {
+        // Constraints are created at the end of configureViews; skip until then.
+        guard controlLeadingConstraint != nil, controlTrailingConstraint != nil else { return }
         // A panel at the bottom edge spans iPhone Duo's strip; the composer's media panel stays with the composer.
         let outset = superview?.iPhoneDuoLayout == nil ? 0 : iPhoneDuoBottomEdgeRightOutset
         controlLeadingConstraint.constant = controlHorizontalInset
@@ -1561,7 +1565,6 @@ final class FolderPickerView: UIView {
         controlEffectView.cornerConfiguration = .capsule()
         controlEffectView.clipsToBounds = true
         liftedContainer.addSubview(controlEffectView)
-        applyDockStyleIfNeeded()
 
         controlContainer.translatesAutoresizingMaskIntoConstraints = false
         // The capsule keeps the strip off the screen's edges; a safe area around it, such as the search filters' over
@@ -1651,6 +1654,8 @@ final class FolderPickerView: UIView {
             stripView.heightAnchor.constraint(equalTo: controlContainer.frameLayoutGuide.heightAnchor),
             stripWidthConstraint,
         ])
+        applyDockStyleIfNeeded()
+
 
         lens = LiquidLens(liftedContainer: liftedContainer, liftedContent: selectedLabelsView, punchout: labelsView)
         if lens == nil {

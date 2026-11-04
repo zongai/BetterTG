@@ -2129,10 +2129,22 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     /// Switch the required width cap between DM (82%) and group/channel (~full).
     private func applyBubbleMaxWidthCap(fullWidth: Bool) {
-        guard bubbleMaxWidthConstraint != nil else { return }
+        guard bubbleMaxWidthConstraint != nil, bubbleContainerView != nil else { return }
+        // Avoid replacing constraints every configure when already correct.
+        let wantMultiplier: CGFloat? = fullWidth ? nil : 0.82
+        let wantConstant: CGFloat = fullWidth ? -4 : 0
+        let currentMultiplier = bubbleMaxWidthConstraint.multiplier
+        let currentConstant = bubbleMaxWidthConstraint.constant
+        let alreadyOK: Bool = {
+            if fullWidth {
+                return abs(currentMultiplier - 1.0) < 0.001 && abs(currentConstant - wantConstant) < 0.5
+            }
+            return abs(currentMultiplier - 0.82) < 0.001 && abs(currentConstant) < 0.5
+        }()
+        if alreadyOK { return }
+
         bubbleMaxWidthConstraint.isActive = false
         if fullWidth {
-            // 相对 contentView 几乎满宽（余量由 row 边距承担）
             bubbleMaxWidthConstraint = bubbleContainerView.widthAnchor.constraint(
                 lessThanOrEqualTo: contentView.widthAnchor,
                 constant: -4,
