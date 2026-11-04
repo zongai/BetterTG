@@ -26,7 +26,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         return [
             SettingsSection(
                 header: nil,
-                footer: "全局开关为默认；可在「聊天例外」为单个群组/频道单独开启或关闭。消息上的翻译区域可点击切换原文/译文。",
+                footer: "默认关闭。开启后按引擎顺序翻译可见消息；可在「聊天例外」为单个群组/频道单独开关。消息上的翻译区域可点击切换原文/译文。",
                 rows: [
                     SettingsRow(
                         title: "自动翻译非目标语言",

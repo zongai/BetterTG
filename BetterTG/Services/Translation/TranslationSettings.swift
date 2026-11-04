@@ -7,8 +7,15 @@ enum TranslationSettings {
     private static let prefix = "BetterTG.fork.translation."
 
     /// Master switch for automatic message-level translation.
+    /// **Default: off** (false). Must be enabled in settings or via per-chat override.
     static var autoTranslateNonTarget: Bool {
-        get { UserDefaults.standard.bool(forKey: prefix + "autoTranslateNonTarget") }
+        get {
+            // Explicit default false when key never written.
+            if UserDefaults.standard.object(forKey: prefix + "autoTranslateNonTarget") == nil {
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: prefix + "autoTranslateNonTarget")
+        }
         set { UserDefaults.standard.set(newValue, forKey: prefix + "autoTranslateNonTarget") }
     }
 
