@@ -9043,26 +9043,42 @@ final class ChatViewController: UIViewController, UICollectionViewDelegate, UICo
         }
     }
 
-    /// Telegram's Translate message item (canTranslateText): with Show Translate Button on, for text in a language the
-    /// user doesn't read. Secret chats never offer it; a protected chat's translation can't be copied.
+    /// Fork: always offer Translate for any chat with text (group / channel / DM).
+    /// Uses BetterTG multi-engine translation into the message bubble (not only Telegram Premium sheet).
     private func translateAction(for message: CustomMessage) -> TelegramContextMenuAction? {
         if case .chatTypeSecret = chatVM.customChat.chat.type { return nil }
-        guard MessageTranslation.showsTranslateButton else { return nil }
         var foundText = copyableText(from: message.message.content)
         for source in message.sourceMessages where foundText == nil {
             foundText = copyableText(from: source.content)
         }
-        guard let messageText = foundText,
-              let language = MessageTranslation.translatableLanguage(of: messageText.text)
-        else {
-            return nil
-        }
-        let canCopy = message.properties.canBeCopied
+        // Prefer caption / formatted body from CustomMessage when content helpers miss it.
+        let plain = (foundText?.text ?? message.formattedText?.text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !plain.isEmpty else { return nil }
+
+        let chatID = message.message.chatId
+        let messageID = message.id
         return TelegramContextMenuAction(
             title: L10n.telegram("Conversation.ContextMenuTranslate"),
             image: UIImage(systemName: "translate"),
         ) { [weak self] in
-            self?.presentTranslation(of: messageText, sourceLanguage: language, canCopy: canCopy)
+            guard let self else { return }
+            // 立即刷新气泡为「翻译中」，再异步写入译文
+            NotificationCenter.default.post(
+                name: TranslationMessageStore.didUpdateNotification,
+                object: nil,
+                userInfo: ["chatID": chatID, "messageID": messageID, "loading": true],
+            )
+            Task { @MainActor in
+                let out = await AutoTranslator.shared.forceTranslate(
+                    chatID: chatID,
+                    messageID: messageID,
+                    text: plain
+                )
+                if out == nil {
+                    self.showChatToast("翻译失败，请检查网络或翻译引擎设置")
+                }
+            }
         }
     }
 

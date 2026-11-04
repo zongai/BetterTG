@@ -76,6 +76,63 @@ final class AutoTranslator {
         return nil
     }
 
+    /// Manual single-message translate (context menu). Ignores auto-translate master switch.
+    @discardableResult
+    func forceTranslate(
+        chatID: Int64,
+        messageID: Int64,
+        text: String,
+        knownSourceLanguage: String? = nil
+    ) async -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let target = TranslationSettings.targetLanguage.lowercased()
+        if let cached = TranslationMessageStore.shared.translatedText(
+            chatID: chatID,
+            messageID: messageID,
+            sourceText: trimmed
+        ) {
+            return cached
+        }
+
+        let contentHash = TranslationCache.stableHash(of: trimmed)
+        let flightKey = "manual:\(chatID):\(messageID):\(target):\(contentHash)"
+        guard !inFlight.contains(flightKey) else { return nil }
+        inFlight.insert(flightKey)
+        defer { inFlight.remove(flightKey) }
+
+        let chain = coordinator.effectiveChain(configured: TranslationSettings.engineChain)
+        for engine in chain {
+            if engine == .deepl, TranslationSettings.deeplAPIKeys.isEmpty { continue }
+            if engine == .azure, TranslationSettings.azureAPIKey.isEmpty { continue }
+            do {
+                let result = try await TranslationServices.translate(
+                    text: trimmed,
+                    targetLang: target,
+                    engine: engine
+                )
+                coordinator.clearLimit(engine)
+                let out = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !out.isEmpty, out != trimmed else { continue }
+                TranslationMessageStore.shared.set(
+                    chatID: chatID,
+                    messageID: messageID,
+                    sourceText: trimmed,
+                    translatedText: out,
+                    engine: engine
+                )
+                return out
+            } catch TranslationError.rateLimited(let e) {
+                coordinator.markLimited(e)
+                continue
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
     /// Batch helper for a slice of chat messages (used by ChatVM).
     func translateVisibleMessages(_ messages: [CustomMessage]) {
         let slice = Array(messages.prefix(50))

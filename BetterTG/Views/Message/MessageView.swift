@@ -1434,6 +1434,11 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                       self.representedMessageKey?.messageID == m,
                       let source = self.representedSourceText
                 else { return }
+                if info["loading"] as? Bool == true {
+                    self.showTranslationLoadingPlaceholder()
+                    self.requestMessageHeightUpdate(force: true)
+                    return
+                }
                 if let translated = TranslationMessageStore.shared.translatedText(
                     chatID: c,
                     messageID: m,
@@ -1446,6 +1451,17 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             }
         }
 
+        // 已有译文（自动或长按手动）一律展示；自动翻译关闭时不主动请求
+        if let translated = TranslationMessageStore.shared.translatedText(
+            chatID: chatID,
+            messageID: messageID,
+            sourceText: sourceText
+        ) {
+            representedTranslatedText = translated
+            refreshTranslationUI(translated: translated, heightUpdate: .none, animated: false)
+            return
+        }
+
         guard TranslationSettings.isAutoTranslateEnabled(chatID: chatID) else {
             translationLabel.isHidden = true
             translationLabel.attributedText = nil
@@ -1453,28 +1469,19 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             textView.isHidden = false
             return
         }
-        if let translated = TranslationMessageStore.shared.translatedText(
-            chatID: chatID,
-            messageID: messageID,
-            sourceText: sourceText
-        ) {
-            representedTranslatedText = translated
-            // 配置/复用 cell 时只改 UI，不 invalidate 列表（滚动中 invalidate 会闪退）
-            refreshTranslationUI(translated: translated, heightUpdate: .none, animated: false)
-        } else {
-            // 第三方常见做法：先显示「翻译中」占位，译文到达后淡入替换
-            textView.isHidden = false
-            showTranslationLoadingPlaceholder()
-            let capturedChat = chatID
-            let capturedMessage = messageID
-            let capturedText = sourceText
-            Task { @MainActor in
-                _ = await AutoTranslator.shared.translateIfNeeded(
-                    chatID: capturedChat,
-                    messageID: capturedMessage,
-                    text: capturedText
-                )
-            }
+
+        // 自动翻译开启：占位 + 后台请求
+        textView.isHidden = false
+        showTranslationLoadingPlaceholder()
+        let capturedChat = chatID
+        let capturedMessage = messageID
+        let capturedText = sourceText
+        Task { @MainActor in
+            _ = await AutoTranslator.shared.translateIfNeeded(
+                chatID: capturedChat,
+                messageID: capturedMessage,
+                text: capturedText
+            )
         }
     }
 
