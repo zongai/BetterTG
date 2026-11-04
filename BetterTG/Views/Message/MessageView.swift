@@ -288,6 +288,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     private let selectionControl = UIControl()
     private let selectionIndicatorView = MessageSelectionIndicatorView()
     private var bubbleWidthConstraint: NSLayoutConstraint!
+    /// Caps bubble width: 0.82 of row for DMs, near-full for groups/channels (fork).
+    private var bubbleMaxWidthConstraint: NSLayoutConstraint!
     private lazy var bubbleTopConstraint = bubbleStack.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 6)
     private lazy var bubbleLeadingConstraint = bubbleStack.leadingAnchor.constraint(
         equalTo: bubbleView.leadingAnchor,
@@ -891,11 +893,15 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             rowLeadingConstraint.constant = showsAvatarColumn ? 0 : 2
             rowTrailingConstraint.constant = -2
             rowStack.setCustomSpacing(4, after: avatarView)
+            // 解除 0.82 上限：与 bubbleWidthConstraint 一致拉满，避免 Auto Layout 丢弃精确宽度
+            applyBubbleMaxWidthCap(fullWidth: true)
         } else {
             rowLeadingConstraint.constant = isCentered ? 8 : (showsAvatarColumn ? 0 : 2)
             rowTrailingConstraint.constant = isCentered ? -8 : -2
             rowStack.setCustomSpacing(8, after: avatarView)
+            applyBubbleMaxWidthCap(fullWidth: false)
         }
+        bubbleContentNeedsMeasurement = true
         // 群组/频道略压缩行距
         let verticalGap: CGFloat = usesFullWidthBubble ? 1 : (7 / 3)
         rowTopConstraint.constant = pendingBubbleMerge.withOlder ? 0 : verticalGap
@@ -1919,11 +1925,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     }
 
     private func configureConstraints() {
-        let maxBubbleWidth = bubbleContainerView.widthAnchor.constraint(
+        // 默认私聊 82%；群组/频道在 configure 时改为接近满宽，避免与 exact width 冲突导致一宽一窄
+        bubbleMaxWidthConstraint = bubbleContainerView.widthAnchor.constraint(
             lessThanOrEqualTo: contentView.widthAnchor,
             multiplier: 0.82,
         )
-        maxBubbleWidth.priority = .required
+        bubbleMaxWidthConstraint.priority = .required
         bubbleWidthConstraint = bubbleContainerView.widthAnchor.constraint(equalToConstant: 16)
         bubbleWidthConstraint.priority = UILayoutPriority(999)
         NSLayoutConstraint.activate([
@@ -1931,7 +1938,7 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             rowLeadingConstraint,
             rowTrailingConstraint,
             rowBottomConstraint,
-            maxBubbleWidth,
+            bubbleMaxWidthConstraint,
             bubbleWidthConstraint,
             bubbleTopConstraint,
             bubbleLeadingConstraint,
@@ -2118,6 +2125,26 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             .lazy
             .map { "\($0.type.accessibilityName), \($0.totalCount)" }
             .joined(separator: ", ")
+    }
+
+    /// Switch the required width cap between DM (82%) and group/channel (~full).
+    private func applyBubbleMaxWidthCap(fullWidth: Bool) {
+        guard bubbleMaxWidthConstraint != nil else { return }
+        bubbleMaxWidthConstraint.isActive = false
+        if fullWidth {
+            // 相对 contentView 几乎满宽（余量由 row 边距承担）
+            bubbleMaxWidthConstraint = bubbleContainerView.widthAnchor.constraint(
+                lessThanOrEqualTo: contentView.widthAnchor,
+                constant: -4,
+            )
+        } else {
+            bubbleMaxWidthConstraint = bubbleContainerView.widthAnchor.constraint(
+                lessThanOrEqualTo: contentView.widthAnchor,
+                multiplier: 0.82,
+            )
+        }
+        bubbleMaxWidthConstraint.priority = .required
+        bubbleMaxWidthConstraint.isActive = true
     }
 
     private func maximumTextWidth(for cellWidth: CGFloat) -> CGFloat {
