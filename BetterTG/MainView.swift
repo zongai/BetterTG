@@ -1418,6 +1418,8 @@ final class FolderPickerView: UIView {
     private var stripWidthConstraint: NSLayoutConstraint!
     private var controlLeadingConstraint: NSLayoutConstraint!
     private var controlTrailingConstraint: NSLayoutConstraint!
+    /// Dock 单文件夹时：玻璃条内容宽度（靠边圆钮）；多文件夹时不用。
+    private var controlWidthConstraint: NSLayoutConstraint?
     private var folders = [CustomFolder]()
     private var items = [Item]()
     private var selectedID: Int?
@@ -1529,18 +1531,45 @@ final class FolderPickerView: UIView {
     private func applyDockStyleIfNeeded() {
         guard controlEffectView.superview != nil else { return }
         if usesDockStyle {
-            // iOS 26/27 底部液态玻璃：近全宽、大圆角连续曲面
-            controlEffectView.layer.cornerRadius = 26
-            controlEffectView.cornerConfiguration = .corners(radius: .fixed(26))
             if controlHorizontalInset > 10 {
                 controlHorizontalInset = 10
             }
+            // 圆角在 updateDockSpan 里按「单钮 / 多页」切换
         } else {
             controlEffectView.layer.cornerRadius = 21
             controlEffectView.cornerConfiguration = .capsule()
         }
         updateControlInsets()
+        updateDockSpan()
         setNeedsLayout()
+    }
+
+    /// 单个文件夹：左侧圆形玻璃钮；多个：全宽展开。
+    private func updateDockSpan() {
+        guard usesDockStyle, controlLeadingConstraint != nil, controlTrailingConstraint != nil else { return }
+        let single = items.count <= 1
+        if single {
+            controlTrailingConstraint.isActive = false
+            controlEffectView.layer.cornerRadius = 21
+            controlEffectView.cornerConfiguration = .capsule()
+            let content = naturalSegmentWidths.first ?? 48
+            let width = max(44, content) + 6 // 玻璃内边 3+3
+            if let existing = controlWidthConstraint {
+                existing.constant = width
+                existing.isActive = true
+            } else {
+                let c = controlEffectView.widthAnchor.constraint(equalToConstant: width)
+                c.priority = UILayoutPriority(999)
+                c.isActive = true
+                controlWidthConstraint = c
+            }
+        } else {
+            controlWidthConstraint?.isActive = false
+            controlTrailingConstraint.isActive = true
+            controlEffectView.layer.cornerRadius = 26
+            controlEffectView.cornerConfiguration = .corners(radius: .fixed(26))
+        }
+        updateControlInsets()
     }
 
     private func updateControlInsets() {
@@ -1683,6 +1712,7 @@ final class FolderPickerView: UIView {
         }
         resolvedSegmentWidths = naturalSegmentWidths
         stripWidthConstraint.constant = naturalSegmentWidths.reduce(0, +)
+        updateDockSpan()
         for (index, folder) in items.enumerated() {
             let button = FolderButton(type: .system)
             button.tag = index
@@ -1754,8 +1784,10 @@ final class FolderPickerView: UIView {
         var widths = naturalSegmentWidths
         if naturalTotal <= availableWidth {
             let regularWidth = floor(availableWidth / CGFloat(buttons.count))
-            // Dock / 满宽底栏：始终均分整条可用宽度（单文件夹时也拉满，避免中间小胶囊）
-            if usesDockStyle || naturalSegmentWidths.allSatisfy({ $0 <= regularWidth }) {
+            // Dock：单文件夹保持内容宽度（圆钮）；多文件夹均分拉满
+            if usesDockStyle, buttons.count <= 1 {
+                widths = naturalSegmentWidths
+            } else if usesDockStyle || naturalSegmentWidths.allSatisfy({ $0 <= regularWidth }) {
                 widths = buttons.indices.map { index in
                     index == buttons.count - 1
                         ? availableWidth - regularWidth * CGFloat(buttons.count - 1)
