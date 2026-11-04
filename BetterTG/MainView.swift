@@ -603,7 +603,7 @@ final class MainViewController: UIViewController, UIPageViewControllerDataSource
     private func configureFolderPicker() {
         folderPicker.translatesAutoresizingMaskIntoConstraints = false
         // Fork: 底部全宽 Dock（参考第三方底栏），分段均分，避免中间一颗「全部」胶囊
-        folderPicker.controlHorizontalInset = 12
+        folderPicker.controlHorizontalInset = 10
         folderPicker.compressesSegmentsToFit = true
         folderPicker.usesDockStyle = true
         folderPicker.onSelection = { [weak self] id in self?.selectFolder(id: id, animated: true) }
@@ -1529,11 +1529,11 @@ final class FolderPickerView: UIView {
     private func applyDockStyleIfNeeded() {
         guard controlEffectView.superview != nil else { return }
         if usesDockStyle {
-            // 全宽底栏圆角，接近图二 Dock，而不是中间悬浮胶囊
-            controlEffectView.layer.cornerRadius = 24
-            controlEffectView.cornerConfiguration = .corners(radius: .fixed(24))
-            if controlHorizontalInset > 12 {
-                controlHorizontalInset = 12
+            // iOS 26/27 底部液态玻璃：近全宽、大圆角连续曲面
+            controlEffectView.layer.cornerRadius = 26
+            controlEffectView.cornerConfiguration = .corners(radius: .fixed(26))
+            if controlHorizontalInset > 10 {
+                controlHorizontalInset = 10
             }
         } else {
             controlEffectView.layer.cornerRadius = 21
@@ -1754,7 +1754,8 @@ final class FolderPickerView: UIView {
         var widths = naturalSegmentWidths
         if naturalTotal <= availableWidth {
             let regularWidth = floor(availableWidth / CGFloat(buttons.count))
-            if naturalSegmentWidths.allSatisfy({ $0 <= regularWidth }) {
+            // Dock / 满宽底栏：始终均分整条可用宽度（单文件夹时也拉满，避免中间小胶囊）
+            if usesDockStyle || naturalSegmentWidths.allSatisfy({ $0 <= regularWidth }) {
                 widths = buttons.indices.map { index in
                     index == buttons.count - 1
                         ? availableWidth - regularWidth * CGFloat(buttons.count - 1)

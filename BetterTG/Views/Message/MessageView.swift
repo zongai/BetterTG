@@ -2078,7 +2078,12 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         let mediaWidth = usesFullBleedMedia && !mediaView.isHidden
             ? mediaView.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
             : 0
-        let maximumContentWidth = max(1, min(maximumBubbleWidth, mediaWidth > 0 ? mediaWidth : maximumBubbleWidth) - 16)
+        // 群组/频道：内容区也按最大宽度排版，避免图文气泡随图片变窄
+        let maximumContentWidth = max(
+            1,
+            (usesFullWidthBubble ? maximumBubbleWidth : min(maximumBubbleWidth, mediaWidth > 0 ? mediaWidth : maximumBubbleWidth))
+                - 16
+        )
         textView.setMaximumLayoutWidth(maximumContentWidth)
         reactionView.setMaximumLayoutWidth(maximumContentWidth)
 
@@ -2109,8 +2114,8 @@ final class MessageCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         if !inlineKeyboardView.isHidden, mediaWidth == 0 {
             preferredBubbleWidth = min(maximumBubbleWidth, max(preferredBubbleWidth, inlineKeyboardView.minimumWidth))
         }
-        // 群组/频道：气泡直接拉到最大可用宽度，减少两侧留白
-        if usesFullWidthBubble, mediaWidth == 0 {
+        // 群组/频道：无论图文/纯文，气泡一律拉满可用宽度（不再跟随图片固有宽度）
+        if usesFullWidthBubble {
             preferredBubbleWidth = maximumBubbleWidth
         }
         if abs(bubbleWidthConstraint.constant - preferredBubbleWidth) > 0.5 {

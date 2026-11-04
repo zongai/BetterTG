@@ -1320,13 +1320,30 @@ final class FolderViewController: UITableViewController, UITableViewDataSourcePr
                 self?.setMuted(chat, !muted, scope: scope, client: client)
             })
         }
+        // Fork: per-chat auto-translate for groups / channels / supergroups.
+        let isGroupOrChannel: Bool = {
+            switch chat.type {
+            case .group, .supergroup: return true
+            case .user, .bot: return false
+            }
+        }()
+        if isGroupOrChannel {
+            let enabled = TranslationSettings.isAutoTranslateEnabled(chatID: chat.id)
+            actions.append(TelegramContextMenuAction(
+                title: enabled ? "关闭此聊天自动翻译" : "开启此聊天自动翻译",
+                image: UIImage(systemName: enabled ? "character.book.closed" : "character.book.closed.fill"),
+                startsNewSection: true,
+            ) {
+                TranslationSettings.setAutoTranslate(!enabled, chatID: chat.id)
+            })
+        }
         // Telegram offers Delete for every chat in the list; the sheet decides between deleting, leaving and
         // clearing history.
         actions.append(TelegramContextMenuAction(
             title: L10n.telegram("ChatList.Context.Delete"),
             image: UIImage(systemName: "trash"),
             isDestructive: true,
-            startsNewSection: true,
+            startsNewSection: !isGroupOrChannel,
         ) { [weak self] in
             self?.deleteChat(chat, scope: scope, client: client)
         })
