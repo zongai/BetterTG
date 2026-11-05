@@ -137,7 +137,7 @@ final class ForkSettingsCloudSync {
     private func snapshot(from message: Message, client: TDLibClient) async throws -> ForkSettingsSnapshot? {
         // Document body preferred.
         if case .messageDocument(let doc) = message.content {
-            let caption = doc.caption?.text ?? ""
+            let caption = doc.caption.text
             guard caption.contains(ForkSettingsSnapshot.cloudMarker)
                     || doc.document.fileName.contains("bettertg-fork-settings")
             else { return nil }
