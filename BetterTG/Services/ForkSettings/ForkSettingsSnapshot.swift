@@ -5,7 +5,7 @@ import Foundation
 
 /// Versioned payload stored as a document in Saved Messages.
 struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
-    static let currentFormat = 1
+    static let currentFormat = 2
     /// Caption / search marker in Saved Messages (do not translate).
     static let cloudMarker = "#BetterTGForkSettings"
     static let fileName = "bettertg-fork-settings.json"
@@ -23,8 +23,11 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
         var showBilingual: Bool
         var targetLanguage: String
         var engineChain: [String]
-        /// Keys intentionally omitted from cloud by default.
+        /// When true, keys are present either as sealed blob or (legacy) plaintext fields.
         var includeAPIKeys: Bool
+        /// Preferred: AES-GCM sealed keys; passphrase lives in iCloud Keychain.
+        var sealedAPIKeys: ForkSettingsKeyCrypto.SealedAPIKeys?
+        /// Legacy plaintext (format 1); never written by current clients.
         var deeplAPIKeys: [String]?
         var azureAPIKey: String?
         var azureRegion: String?
@@ -55,21 +58,7 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
         ForkSettingsSnapshot(
             format: currentFormat,
             updatedAt: ForkSettingsClock.now(),
-            translation: .init(
-                autoTranslateNonTarget: TranslationSettings.autoTranslateNonTarget,
-                showBilingual: TranslationSettings.showBilingual,
-                targetLanguage: TranslationSettings.targetLanguage,
-                engineChain: TranslationSettings.engineChain.map(\.rawValue),
-                includeAPIKeys: includeAPIKeys,
-                deeplAPIKeys: includeAPIKeys ? TranslationSettings.deeplAPIKeys : nil,
-                azureAPIKey: includeAPIKeys ? TranslationSettings.azureAPIKey : nil,
-                azureRegion: includeAPIKeys ? TranslationSettings.azureRegion : nil,
-                chatOverrides: Dictionary(
-                    uniqueKeysWithValues: TranslationSettings.overriddenChatIDs.map {
-                        (String($0.chatID), $0.enabled)
-                    }
-                )
-            ),
+            translation: Self.makeTranslationSlice(includeAPIKeys: includeAPIKeys),
             contentFilter: .init(
                 hideAds: ContentFilterSettings.hideAds,
                 filterEnabled: ContentFilterSettings.filterEnabled,
@@ -100,9 +89,7 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
             TranslationSettings.engineChain = engines
         }
         if translation.includeAPIKeys {
-            if let keys = translation.deeplAPIKeys { TranslationSettings.deeplAPIKeys = keys }
-            if let v = translation.azureAPIKey { TranslationSettings.azureAPIKey = v }
-            if let v = translation.azureRegion { TranslationSettings.azureRegion = v }
+            Self.applyAPIKeys(from: translation)
         }
         if let overrides = translation.chatOverrides {
             for (key, enabled) in overrides {
@@ -146,6 +133,56 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
         try JSONDecoder().decode(ForkSettingsSnapshot.self, from: data)
     }
 }
+
+    private static func makeTranslationSlice(includeAPIKeys: Bool) -> TranslationSlice {
+        var sealed: ForkSettingsKeyCrypto.SealedAPIKeys?
+        if includeAPIKeys {
+            if let passphrase = try? ForkSettingsSecretStore.ensurePassphrase() {
+                let plain = ForkSettingsKeyCrypto.PlainAPIKeys(
+                    deeplAPIKeys: TranslationSettings.deeplAPIKeys,
+                    azureAPIKey: TranslationSettings.azureAPIKey,
+                    azureRegion: TranslationSettings.azureRegion
+                )
+                sealed = try? ForkSettingsKeyCrypto.seal(keys: plain, passphrase: passphrase)
+            }
+        }
+        return TranslationSlice(
+            autoTranslateNonTarget: TranslationSettings.autoTranslateNonTarget,
+            showBilingual: TranslationSettings.showBilingual,
+            targetLanguage: TranslationSettings.targetLanguage,
+            engineChain: TranslationSettings.engineChain.map(\.rawValue),
+            includeAPIKeys: includeAPIKeys && sealed != nil,
+            sealedAPIKeys: sealed,
+            deeplAPIKeys: nil,
+            azureAPIKey: nil,
+            azureRegion: nil,
+            chatOverrides: Dictionary(
+                uniqueKeysWithValues: TranslationSettings.overriddenChatIDs.map {
+                    (String($0.chatID), $0.enabled)
+                }
+            )
+        )
+    }
+
+    private static func applyAPIKeys(from translation: TranslationSlice) {
+        if let sealed = translation.sealedAPIKeys {
+            do {
+                let passphrase = try ForkSettingsSecretStore.loadPassphrase()
+                guard let passphrase, !passphrase.isEmpty else { return }
+                let plain = try ForkSettingsKeyCrypto.open(sealed: sealed, passphrase: passphrase)
+                TranslationSettings.deeplAPIKeys = plain.deeplAPIKeys
+                TranslationSettings.azureAPIKey = plain.azureAPIKey
+                TranslationSettings.azureRegion = plain.azureRegion
+            } catch {
+                // Missing iCloud Keychain passphrase on this device — leave local keys unchanged.
+            }
+            return
+        }
+        // Legacy plaintext format 1
+        if let keys = translation.deeplAPIKeys { TranslationSettings.deeplAPIKeys = keys }
+        if let v = translation.azureAPIKey { TranslationSettings.azureAPIKey = v }
+        if let v = translation.azureRegion { TranslationSettings.azureRegion = v }
+    }
 
 enum ForkSettingsClock {
     private static let key = "BetterTG.fork.settings.updatedAt"

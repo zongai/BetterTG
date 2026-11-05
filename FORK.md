@@ -62,6 +62,15 @@
 - 标记：`#BetterTGForkSettings`
 - 文件名：`bettertg-fork-settings.json`
 - 入口：设置 → BetterTG 扩展 → **设置同步**
-- 默认开启；API Key 默认不同步
+- 默认开启；API Key **默认不同步**
 - 登录后自动拉取；本地修改防抖上传（约 2s）
 - 冲突策略：比较 `updatedAt`，较新的一侧胜出
+
+### API Key 加密
+
+- 开启「同步加密 API Key」后，Key 以 **AES-GCM** 密文写入收藏夹
+- **口令**保存在 **iCloud 钥匙串**（`kSecAttrSynchronizable`，随 Apple ID）
+- 首次开启会自动生成随机口令；也可自定义
+- 换机流程：同一 Apple ID 同步口令 + 同一 Telegram 账号拉取收藏夹 → 自动解密
+- 未开 iCloud 钥匙串的设备无法解密云端 Key
+
