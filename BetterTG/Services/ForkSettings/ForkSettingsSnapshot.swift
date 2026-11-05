@@ -132,7 +132,6 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
     static func decode(from data: Data) throws -> ForkSettingsSnapshot {
         try JSONDecoder().decode(ForkSettingsSnapshot.self, from: data)
     }
-}
 
     private static func makeTranslationSlice(includeAPIKeys: Bool) -> TranslationSlice {
         var sealed: ForkSettingsKeyCrypto.SealedAPIKeys?
@@ -183,6 +182,8 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
         if let v = translation.azureAPIKey { TranslationSettings.azureAPIKey = v }
         if let v = translation.azureRegion { TranslationSettings.azureRegion = v }
     }
+}
+
 
 enum ForkSettingsClock {
     private static let key = "BetterTG.fork.settings.updatedAt"
