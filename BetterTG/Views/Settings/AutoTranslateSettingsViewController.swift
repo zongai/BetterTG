@@ -32,6 +32,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
                         title: "自动翻译非目标语言",
                         accessory: .toggle(isOn: TranslationSettings.autoTranslateNonTarget, onChange: { [weak self] on in
                             TranslationSettings.autoTranslateNonTarget = on
+                        ForkSettingsCloudSync.shared.noteLocalChange()
                             self?.reload()
                         }),
                     ),
@@ -118,6 +119,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
                         action: { [weak self] in
                             self?.editKey(title: "Azure API Key", current: TranslationSettings.azureAPIKey) {
                                 TranslationSettings.azureAPIKey = $0
+                        ForkSettingsCloudSync.shared.noteLocalChange()
                             }
                         }
                     ),
@@ -128,6 +130,7 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
                         action: { [weak self] in
                             self?.editKey(title: "Azure Region", current: TranslationSettings.azureRegion) {
                                 TranslationSettings.azureRegion = $0.isEmpty ? "eastasia" : $0
+                        ForkSettingsCloudSync.shared.noteLocalChange()
                             }
                         }
                     ),
@@ -157,7 +160,8 @@ final class AutoTranslateSettingsViewController: SettingsListViewController {
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
             let v = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !v.isEmpty { TranslationSettings.targetLanguage = v }
+            if !v.isEmpty { TranslationSettings.targetLanguage = v
+                ForkSettingsCloudSync.shared.noteLocalChange() }
             self?.reload()
         })
         present(alert, animated: true)
@@ -207,6 +211,7 @@ final class DeepLAPIKeyManagerViewController: UITableViewController {
 
     private func persist() {
         TranslationSettings.deeplAPIKeys = keys
+        ForkSettingsCloudSync.shared.noteLocalChange()
         updateEmptyHint()
         refreshBarButtons()
     }

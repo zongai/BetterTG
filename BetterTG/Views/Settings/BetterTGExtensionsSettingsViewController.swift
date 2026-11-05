@@ -77,6 +77,19 @@ final class BetterTGExtensionsSettingsViewController: SettingsListViewController
                             )
                         }
                     ),
+                    SettingsRow(
+                        title: "设置同步",
+                        detail: ForkSettingsCloudOptions.enabled ? "收藏夹云同步" : "关",
+                        symbol: "icloud.and.arrow.up",
+                        symbolTint: .systemTeal,
+                        accessory: .disclosure,
+                        action: { [weak self] in
+                            self?.navigationController?.pushViewController(
+                                ForkSettingsSyncViewController(),
+                                animated: true
+                            )
+                        }
+                    ),
                 ]
             ),
         ]
@@ -127,6 +140,7 @@ final class MessageTextSizeSettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         MessageAppearanceSettings.textScale = scales[indexPath.row]
+        ForkSettingsCloudSync.shared.noteLocalChange()
         tableView.reloadData()
     }
 }

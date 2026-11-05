@@ -17,6 +17,7 @@ final class DownloadCacheSettingsViewController: SettingsListViewController {
                     title: "启用多线程下载",
                     accessory: .toggle(isOn: DownloadCacheSettings.multiThreadDownload, onChange: { [weak self] on in
                         DownloadCacheSettings.multiThreadDownload = on
+                        ForkSettingsCloudSync.shared.noteLocalChange()
                         MultipartDownloadConfig.shared.applyFromSettings()
                         self?.reload()
                     }),
@@ -36,6 +37,7 @@ final class DownloadCacheSettingsViewController: SettingsListViewController {
                         title: "自动清理缓存",
                         accessory: .toggle(isOn: DownloadCacheSettings.autoCleanupEnabled, onChange: { on in
                             DownloadCacheSettings.autoCleanupEnabled = on
+                            ForkSettingsCloudSync.shared.noteLocalChange()
                         }),
                     ),
                     SettingsRow(
@@ -45,6 +47,7 @@ final class DownloadCacheSettingsViewController: SettingsListViewController {
                         action: { [weak self] in
                             self?.pickNumber(title: "保留天数", current: DownloadCacheSettings.keepDays) {
                                 DownloadCacheSettings.keepDays = $0
+                                ForkSettingsCloudSync.shared.noteLocalChange()
                             }
                         }
                     ),
@@ -55,6 +58,7 @@ final class DownloadCacheSettingsViewController: SettingsListViewController {
                         action: { [weak self] in
                             self?.pickNumber(title: "缓存上限 (MB)", current: DownloadCacheSettings.maxCacheMB) {
                                 DownloadCacheSettings.maxCacheMB = $0
+                                ForkSettingsCloudSync.shared.noteLocalChange()
                             }
                         }
                     ),
@@ -73,6 +77,7 @@ final class DownloadCacheSettingsViewController: SettingsListViewController {
         for n in [4, 8, 12, 16, 24, 32] {
             sheet.addAction(UIAlertAction(title: "\(n)", style: .default) { [weak self] _ in
                 DownloadCacheSettings.parallelParts = n
+                ForkSettingsCloudSync.shared.noteLocalChange()
                 MultipartDownloadConfig.shared.applyFromSettings()
                 self?.reload()
             })

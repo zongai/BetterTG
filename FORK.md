@@ -53,3 +53,15 @@
 ```
 
 需要 Xcode 26.3（CI 与当前工程对齐）。
+
+
+## 设置同步（随 Telegram 账号）
+
+扩展设置通过 **收藏夹（Saved Messages）** 中的隐藏文档同步：
+
+- 标记：`#BetterTGForkSettings`
+- 文件名：`bettertg-fork-settings.json`
+- 入口：设置 → BetterTG 扩展 → **设置同步**
+- 默认开启；API Key 默认不同步
+- 登录后自动拉取；本地修改防抖上传（约 2s）
+- 冲突策略：比较 `updatedAt`，较新的一侧胜出

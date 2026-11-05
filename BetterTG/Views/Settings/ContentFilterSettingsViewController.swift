@@ -24,6 +24,7 @@ final class ContentFilterSettingsViewController: SettingsListViewController {
                         title: "隐藏广告 / 赞助消息",
                         accessory: .toggle(isOn: ContentFilterSettings.hideAds, onChange: { on in
                             ContentFilterSettings.hideAds = on
+                            ForkSettingsCloudSync.shared.noteLocalChange()
                         }),
                     ),
                     SettingsRow(
@@ -32,6 +33,7 @@ final class ContentFilterSettingsViewController: SettingsListViewController {
                         style: .subtitle,
                         accessory: .toggle(isOn: ContentFilterSettings.filterEnabled, onChange: { [weak self] on in
                             ContentFilterSettings.filterEnabled = on
+                            ForkSettingsCloudSync.shared.noteLocalChange()
                             self?.reload()
                         }),
                     ),
@@ -146,7 +148,9 @@ final class KeywordListManagerViewController: UITableViewController {
     private func persist() {
         switch mode {
         case .blacklist: ContentFilterSettings.blacklist = items
+                ForkSettingsCloudSync.shared.noteLocalChange()
         case .whitelist: ContentFilterSettings.whitelist = items
+                ForkSettingsCloudSync.shared.noteLocalChange()
         }
         updateEmptyState()
         refreshBarButtons()

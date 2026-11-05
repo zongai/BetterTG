@@ -14,6 +14,7 @@ import UIKit
     ) -> Bool {
         UIScrollView.hideSystemEdgeEffects()
         FFmpegCapabilities.assertRequiredCodecsAvailable()
+        ForkSettingsCloudSync.shared.start()
         #if DEBUG
             RichNotificationTargetProbe.runIfRequested()
             RichNotificationSessionLifetimeProbe.runIfRequested()
