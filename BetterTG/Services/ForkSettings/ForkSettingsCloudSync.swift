@@ -1,5 +1,13 @@
 // ForkSettingsCloudSync.swift
 // Sync fork settings via a marker document in Saved Messages (follows Telegram account).
+//
+// Safety rules (prevent new blank device from wiping cloud):
+// 1. Never auto-push until a successful pull finished this session.
+// 2. Never auto-push unless the user actually changed fork settings on this device
+//    (`hasUserEdited`), except explicit "立即上传".
+// 3. If cloud exists and local has no user edits (or local.updatedAt == 0), always apply cloud.
+// 4. Before upload, re-fetch cloud; if remote is newer, apply remote and skip upload.
+// 5. Only delete old marker messages after deciding to upload.
 
 import Foundation
 import TDLibKit
@@ -21,7 +29,16 @@ final class ForkSettingsCloudSync {
 
     private var pushTask: Task<Void, Never>?
     private var didPullThisSession = false
+    private var isPulling = false
     private var observers: [Any] = []
+
+    private static let editedKey = "BetterTG.fork.cloud.hasUserEdited"
+
+    /// True after the user changes a fork preference on this install (or after applying cloud).
+    private var hasUserEdited: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.editedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.editedKey) }
+    }
 
     private init() {}
 
@@ -31,14 +48,18 @@ final class ForkSettingsCloudSync {
         observers.append(nc.addObserver(forName: .authorizationStateReady, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 self?.didPullThisSession = false
-                await self?.pullIfNeeded()
+                await self?.pullIfNeeded(force: true)
             }
         })
     }
 
     /// Call after any local fork preference changes (settings UI).
     func noteLocalChange() {
+        hasUserEdited = true
         ForkSettingsClock.touch()
+        // Do not push until we have finished at least one pull this session,
+        // otherwise a blank new device can overwrite Saved Messages.
+        guard didPullThisSession, !isPulling else { return }
         schedulePush()
     }
 
@@ -47,25 +68,39 @@ final class ForkSettingsCloudSync {
         guard ForkSettingsCloudOptions.enabled else { return }
         guard TDLib.shared.activeAccount?.userID != nil else { return }
         if didPullThisSession, !force { return }
+        if isPulling { return }
+
+        isPulling = true
         status = .syncing
+        defer { isPulling = false }
+
         do {
-            guard let remote = try await fetchRemoteSnapshot() else {
-                // Nothing in cloud yet — upload local if we have any non-default prefs later.
-                didPullThisSession = true
-                status = .success(Date())
-                schedulePush()
-                return
+            let remote = try await fetchRemoteSnapshot()
+            if let remote {
+                let local = ForkSettingsClock.now()
+                // New / untouched device: always prefer cloud when present.
+                let preferRemote = !hasUserEdited || local <= 0 || remote.updatedAt >= local
+                if preferRemote {
+                    remote.apply(touchLocalClock: true)
+                    // Cloud is source of truth; do not treat apply as a local edit that needs re-upload.
+                    hasUserEdited = false
+                } else {
+                    // Real local edits newer than cloud — upload after pull gate opens.
+                    didPullThisSession = true
+                    status = .success(Date())
+                    schedulePush(delay: 0.5)
+                    return
+                }
             }
-            let local = ForkSettingsClock.now()
-            if remote.updatedAt >= local {
-                remote.apply(touchLocalClock: true)
-            } else {
-                // Local is newer; push after pull completes.
-                schedulePush(delay: 0.5)
-            }
+            // No remote document: do NOT seed cloud with blank defaults.
+            // First upload happens only after the user edits settings (noteLocalChange).
             didPullThisSession = true
             status = .success(Date())
+            if hasUserEdited {
+                schedulePush(delay: 0.5)
+            }
         } catch {
+            // Pull failed — never push; avoid wiping cloud with local blanks.
             status = .failure(error.localizedDescription)
         }
     }
@@ -74,7 +109,7 @@ final class ForkSettingsCloudSync {
         guard ForkSettingsCloudOptions.enabled else { return }
         status = .syncing
         do {
-            try await uploadSnapshot()
+            try await uploadSnapshot(force: true)
             status = .success(Date())
         } catch {
             status = .failure(error.localizedDescription)
@@ -83,12 +118,13 @@ final class ForkSettingsCloudSync {
 
     private func schedulePush(delay: TimeInterval = 2.0) {
         guard ForkSettingsCloudOptions.enabled else { return }
+        guard didPullThisSession, !isPulling else { return }
+        guard hasUserEdited else { return }
         pushTask?.cancel()
         pushTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            // Only push if we already pulled once (avoid overwriting cloud with empty defaults at cold start).
-            guard didPullThisSession else { return }
+            guard didPullThisSession, !isPulling, hasUserEdited else { return }
             await pushNow()
         }
     }
@@ -96,11 +132,10 @@ final class ForkSettingsCloudSync {
     // MARK: - TDLib
 
     private func client() throws -> TDLibClient {
-        let client = TDLib.shared.activeClient
         guard TDLib.shared.activeAccount?.userID != nil else {
             throw SyncError.notReady
         }
-        return client
+        return TDLib.shared.activeClient
     }
 
     private func savedMessagesChatID(client: TDLibClient) async throws -> Int64 {
@@ -135,7 +170,6 @@ final class ForkSettingsCloudSync {
     }
 
     private func snapshot(from message: Message, client: TDLibClient) async throws -> ForkSettingsSnapshot? {
-        // Document body preferred.
         if case .messageDocument(let doc) = message.content {
             let caption = doc.caption.text
             guard caption.contains(ForkSettingsSnapshot.cloudMarker)
@@ -145,7 +179,6 @@ final class ForkSettingsCloudSync {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             return try ForkSettingsSnapshot.decode(from: data)
         }
-        // Fallback: plain text payload after the marker line.
         if case .messageText(let text) = message.content {
             let body = text.text.text
             guard body.contains(ForkSettingsSnapshot.cloudMarker) else { return nil }
@@ -176,9 +209,31 @@ final class ForkSettingsCloudSync {
         return downloaded.local.path
     }
 
-    private func uploadSnapshot() async throws {
+    /// - Parameter force: user tapped「立即上传」— still re-check remote so we don't clobber a newer cloud copy.
+    private func uploadSnapshot(force: Bool) async throws {
+        // Guard automatic paths again (force still requires enabled + account).
+        if !force {
+            guard didPullThisSession, hasUserEdited else { return }
+        }
+
+        // Re-fetch so a newer cloud revision always wins.
+        if let remote = try await fetchRemoteSnapshot() {
+            let local = ForkSettingsClock.now()
+            if remote.updatedAt > local {
+                remote.apply(touchLocalClock: true)
+                hasUserEdited = false
+                return
+            }
+            // Equal timestamps + no force: skip redundant rewrite.
+            if !force, remote.updatedAt == local, !hasUserEdited {
+                return
+            }
+        }
+
         let client = try client()
         let chatID = try await savedMessagesChatID(client: client)
+
+        // Bump clock only for intentional uploads after pull.
         ForkSettingsClock.touch()
         let snapshot = ForkSettingsSnapshot.capture(includeAPIKeys: ForkSettingsCloudOptions.syncAPIKeys)
         let data = try snapshot.jsonData()
@@ -187,7 +242,6 @@ final class ForkSettingsCloudSync {
             .appendingPathComponent(ForkSettingsSnapshot.fileName)
         try data.write(to: temp, options: .atomic)
 
-        // Remove previous marker messages so Saved Messages does not accumulate junk.
         try await deleteOldMarkerMessages(chatID: chatID, client: client)
 
         let caption = FormattedText(entities: [], text: ForkSettingsSnapshot.cloudMarker)
@@ -211,6 +265,7 @@ final class ForkSettingsCloudSync {
             topicId: nil
         )
         try? FileManager.default.removeItem(at: temp)
+        hasUserEdited = false
     }
 
     private func deleteOldMarkerMessages(chatID: Int64, client: TDLibClient) async throws {
