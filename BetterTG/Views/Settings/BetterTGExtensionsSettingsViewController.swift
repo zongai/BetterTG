@@ -51,9 +51,7 @@ final class BetterTGExtensionsSettingsViewController: SettingsListViewController
                     ),
                     SettingsRow(
                         title: "下载与缓存",
-                        detail: DownloadCacheSettings.multiThreadDownload
-                            ? "多线程 \(DownloadCacheSettings.parallelParts) 分片"
-                            : "单线程",
+                        detail: "Boost · \(DownloadCacheSettings.boostLevel.title)",
                         symbol: "arrow.down.circle.fill",
                         symbolTint: .systemGreen,
                         accessory: .disclosure,

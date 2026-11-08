@@ -43,6 +43,7 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
     }
 
     struct DownloadSlice: Codable, Equatable, Sendable {
+        var boostLevel: String?
         var multiThreadDownload: Bool
         var parallelParts: Int
         var autoCleanupEnabled: Bool
@@ -66,6 +67,7 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
                 whitelist: ContentFilterSettings.whitelist
             ),
             download: .init(
+                boostLevel: DownloadCacheSettings.boostLevel.rawValue,
                 multiThreadDownload: DownloadCacheSettings.multiThreadDownload,
                 parallelParts: DownloadCacheSettings.parallelParts,
                 autoCleanupEnabled: DownloadCacheSettings.autoCleanupEnabled,
@@ -104,8 +106,12 @@ struct ForkSettingsSnapshot: Codable, Equatable, Sendable {
         ContentFilterSettings.blacklist = contentFilter.blacklist
         ContentFilterSettings.whitelist = contentFilter.whitelist
 
-        DownloadCacheSettings.multiThreadDownload = download.multiThreadDownload
-        DownloadCacheSettings.parallelParts = download.parallelParts
+        if let raw = download.boostLevel, let level = DownloadBoostLevel(rawValue: raw) {
+            DownloadCacheSettings.boostLevel = level
+        } else {
+            DownloadCacheSettings.multiThreadDownload = download.multiThreadDownload
+            DownloadCacheSettings.parallelParts = download.parallelParts
+        }
         DownloadCacheSettings.autoCleanupEnabled = download.autoCleanupEnabled
         DownloadCacheSettings.keepDays = download.keepDays
         DownloadCacheSettings.maxCacheMB = download.maxCacheMB

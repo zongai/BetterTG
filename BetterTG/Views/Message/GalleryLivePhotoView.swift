@@ -201,12 +201,11 @@ final class GalleryLivePhotoView: UIView, GalleryMediaView, UIScrollViewDelegate
         if !video.local.isDownloadingCompleted { pendingMotionDownload = (video.id, client) }
         task = Task { [weak self] in
             do {
-                let file = try await client.downloadFile(
+                let file = try await BoostedFileDownload.download(
+                    client: client,
                     fileId: video.id,
-                    limit: 0,
-                    offset: 0,
-                    priority: 16,
-                    synchronous: true,
+                    expectedSize: video.expectedSize > 0 ? video.expectedSize : video.size,
+                    synchronous: true
                 )
                 try Task.checkCancellation()
                 guard file.local.isDownloadingCompleted else { throw CocoaError(.fileReadUnknown) }

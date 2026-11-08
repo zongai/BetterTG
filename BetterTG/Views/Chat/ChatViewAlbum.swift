@@ -824,12 +824,12 @@ enum MediaGallerySaveError: LocalizedError {
         {
             return URL(filePath: path)
         }
-        let downloaded = try await client.downloadFile(
+        let known = try? await client.getFile(fileId: asset.fileID)
+        let downloaded = try await BoostedFileDownload.download(
+            client: client,
             fileId: asset.fileID,
-            limit: 0,
-            offset: 0,
-            priority: 16,
-            synchronous: true,
+            expectedSize: known?.expectedSize ?? known?.size ?? 0,
+            synchronous: true
         )
         try Task.checkCancellation()
         guard downloaded.id == asset.fileID,
@@ -846,12 +846,11 @@ enum MediaGallerySaveError: LocalizedError {
         client: TDLibClient,
     ) async throws -> LivePhotoResources? {
         guard let video = asset.livePhotoVideo else { return nil }
-        let file = video.local.isDownloadingCompleted ? video : try await client.downloadFile(
+        let file = video.local.isDownloadingCompleted ? video : try await BoostedFileDownload.download(
+            client: client,
             fileId: video.id,
-            limit: 0,
-            offset: 0,
-            priority: 16,
-            synchronous: true,
+            expectedSize: video.expectedSize > 0 ? video.expectedSize : video.size,
+            synchronous: true
         )
         guard file.local.isDownloadingCompleted,
               !file.local.path.isEmpty else { throw MediaGallerySaveError.downloadFailed }

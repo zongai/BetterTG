@@ -169,12 +169,14 @@ final class MediaDownloadStatusView: UIControl {
         let client = client
         let fileID = fileID
         Task { [weak self] in
-            let file = try? await client.downloadFile(
+            // Resolve size for boost part sizing.
+            let known = try? await client.getFile(fileId: fileID)
+            let size = known?.expectedSize ?? known?.size ?? 0
+            let file = try? await BoostedFileDownload.download(
+                client: client,
                 fileId: fileID,
-                limit: 0,
-                offset: 0,
-                priority: 16,
-                synchronous: false,
+                expectedSize: size,
+                synchronous: false
             )
             guard let file else { return }
             self?.apply(file)

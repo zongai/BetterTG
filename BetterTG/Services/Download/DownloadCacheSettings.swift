@@ -2,25 +2,117 @@
 
 import Foundation
 
+// MARK: - Download Boost
+
+/// Four-tier boost approximating Swiftgram / Premium-client parallelism.
+enum DownloadBoostLevel: String, CaseIterable, Codable, Sendable {
+    case off
+    case standard
+    case high
+    case extreme
+
+    var title: String {
+        switch self {
+        case .off: "关闭"
+        case .standard: "标准"
+        case .high: "高"
+        case .extreme: "极高"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .off: "单连接顺序下载"
+        case .standard: "小并行，较稳"
+        case .high: "接近 Premium 客户端"
+        case .extreme: "最大并行，可能不稳定"
+        }
+    }
+
+    /// Target parallel byte-range workers for large files.
+    var parallelParts: Int {
+        switch self {
+        case .off: 1
+        case .standard: 4
+        case .high: 12
+        case .extreme: 24
+        }
+    }
+
+    /// TDLib downloadFile priority (1...32).
+    var priority: Int {
+        switch self {
+        case .off: 8
+        case .standard: 16
+        case .high: 24
+        case .extreme: 32
+        }
+    }
+
+    /// Max simultaneous large-file downloads app-wide.
+    var maxConcurrentLargeFiles: Int {
+        switch self {
+        case .off: 1
+        case .standard: 2
+        case .high: 2
+        case .extreme: 3
+        }
+    }
+
+    static func nearest(toParts parts: Int, enabled: Bool) -> DownloadBoostLevel {
+        guard enabled, parts > 1 else { return .off }
+        let candidates = DownloadBoostLevel.allCases.filter { $0 != .off }
+        return candidates.min(by: { abs($0.parallelParts - parts) < abs($1.parallelParts - parts) }) ?? .high
+    }
+}
+
+// MARK: - Settings
+
 enum DownloadCacheSettings {
     private static let prefix = "BetterTG.fork.download."
 
-    static var multiThreadDownload: Bool {
+    /// Primary boost control. Migrates from legacy multiThread + parallelParts when unset.
+    static var boostLevel: DownloadBoostLevel {
         get {
-            if UserDefaults.standard.object(forKey: prefix + "multiThread") == nil { return true }
-            return UserDefaults.standard.bool(forKey: prefix + "multiThread")
+            if let raw = UserDefaults.standard.string(forKey: prefix + "boostLevel"),
+               let level = DownloadBoostLevel(rawValue: raw)
+            {
+                return level
+            }
+            // Legacy migration
+            let multi: Bool = {
+                if UserDefaults.standard.object(forKey: prefix + "multiThread") == nil { return true }
+                return UserDefaults.standard.bool(forKey: prefix + "multiThread")
+            }()
+            let parts: Int = {
+                let v = UserDefaults.standard.integer(forKey: prefix + "parallelParts")
+                return v == 0 ? 16 : min(32, max(4, v))
+            }()
+            return DownloadBoostLevel.nearest(toParts: parts, enabled: multi)
         }
-        set { UserDefaults.standard.set(newValue, forKey: prefix + "multiThread") }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: prefix + "boostLevel")
+            // Keep legacy keys in sync for older snapshot fields / UI.
+            UserDefaults.standard.set(newValue != .off, forKey: prefix + "multiThread")
+            UserDefaults.standard.set(newValue.parallelParts, forKey: prefix + "parallelParts")
+        }
     }
 
-    /// Parallel parts for large file downloads (4...32).
-    static var parallelParts: Int {
-        get {
-            let v = UserDefaults.standard.integer(forKey: prefix + "parallelParts")
-            if v == 0 { return 16 }
-            return min(32, max(4, v))
+    /// Legacy toggles kept for cloud snapshot compatibility.
+    static var multiThreadDownload: Bool {
+        get { boostLevel != .off }
+        set {
+            if newValue {
+                if boostLevel == .off { boostLevel = .high }
+            } else {
+                boostLevel = .off
+            }
         }
-        set { UserDefaults.standard.set(min(32, max(4, newValue)), forKey: prefix + "parallelParts") }
+    }
+
+    static var parallelParts: Int {
+        get { boostLevel.parallelParts }
+        set { boostLevel = DownloadBoostLevel.nearest(toParts: newValue, enabled: newValue > 1) }
     }
 
     static var autoCleanupEnabled: Bool {
@@ -51,7 +143,6 @@ enum DownloadCacheSettings {
         set { UserDefaults.standard.set(newValue, forKey: lastCleanupKey) }
     }
 
-    /// Apply multipart config and optionally run cleanup (call on foreground).
     @MainActor
     static func applyOnForeground() {
         MultipartDownloadConfig.shared.applyFromSettings()
@@ -63,23 +154,33 @@ enum DownloadCacheSettings {
     }
 }
 
+// MARK: - Runtime config
+
 final class MultipartDownloadConfig {
     static let shared = MultipartDownloadConfig()
-    private init() {}
+    private init() { applyFromSettings() }
 
-    private(set) var parallelParts: Int = 16
+    private(set) var level: DownloadBoostLevel = .high
+    private(set) var parallelParts: Int = 12
     private(set) var enabled: Bool = true
+    private(set) var priority: Int = 24
+    private(set) var maxConcurrentLargeFiles: Int = 2
 
     func applyFromSettings() {
-        enabled = DownloadCacheSettings.multiThreadDownload
-        parallelParts = DownloadCacheSettings.parallelParts
+        level = DownloadCacheSettings.boostLevel
+        enabled = level != .off
+        parallelParts = level.parallelParts
+        priority = level.priority
+        maxConcurrentLargeFiles = level.maxConcurrentLargeFiles
     }
 
     /// Effective parallel part count for a given file size.
     func parts(forFileSize size: Int64) -> Int {
         guard enabled else { return 1 }
-        if size < 2 * 1024 * 1024 { return 1 }
-        if size < 16 * 1024 * 1024 { return min(4, parallelParts) }
+        if size <= 0 { return 1 }
+        if size < 1 * 1024 * 1024 { return 1 }
+        if size < 8 * 1024 * 1024 { return min(2, parallelParts) }
+        if size < 32 * 1024 * 1024 { return min(4, parallelParts) }
         return parallelParts
     }
 }
@@ -90,46 +191,36 @@ final class DownloadCacheCleaner {
     private init() {}
 
     func cleanupIfNeeded() {
-        let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-Double(DownloadCacheSettings.keepDays) * 86400)
         let maxBytes = Int64(DownloadCacheSettings.maxCacheMB) * 1024 * 1024
-        let roots: [URL] = [
-            fm.temporaryDirectory,
-            fm.urls(for: .cachesDirectory, in: .userDomainMask).first,
-        ].compactMap { $0 }
+        // Best-effort: temp directory sweep only (TDLib media box is managed by TDLib).
+        let tmp = FileManager.default.temporaryDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: tmp,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
 
-        var files: [(url: URL, size: Int64, modified: Date)] = []
-        for root in roots {
-            guard let enumerator = fm.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            while let item = enumerator.nextObject() as? URL {
-                guard let values = try? item.resourceValues(forKeys: [
-                    .isRegularFileKey, .contentModificationDateKey, .fileSizeKey,
-                ]),
-                    values.isRegularFile == true
-                else { continue }
-                let modified = values.contentModificationDate ?? .distantPast
-                let size = Int64(values.fileSize ?? 0)
-                files.append((item, size, modified))
+        var total: Int64 = 0
+        var dated: [(URL, Date, Int64)] = []
+        for url in files {
+            guard url.lastPathComponent.hasPrefix("BetterTG") || url.pathExtension == "part" else { continue }
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let date = values?.contentModificationDate ?? .distantPast
+            let size = Int64(values?.fileSize ?? 0)
+            if date < cutoff {
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                total += size
+                dated.append((url, date, size))
             }
         }
-
-        // Delete expired first.
-        for f in files where f.modified < cutoff {
-            try? fm.removeItem(at: f.url)
-        }
-
-        // Enforce size budget (oldest first).
-        let remaining = files.filter { (try? $0.url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true }
-        var total = remaining.reduce(Int64(0)) { $0 + $1.size }
-        if total <= maxBytes { return }
-        for f in remaining.sorted(by: { $0.modified < $1.modified }) {
-            if total <= maxBytes { break }
-            try? fm.removeItem(at: f.url)
-            total -= f.size
+        if total > maxBytes {
+            for (url, _, size) in dated.sorted(by: { $0.1 < $1.1 }) {
+                try? FileManager.default.removeItem(at: url)
+                total -= size
+                if total <= maxBytes { break }
+            }
         }
     }
 }
