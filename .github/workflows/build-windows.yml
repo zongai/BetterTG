@@ -1,0 +1,50 @@
+# Build BetterTG.Windows — independent of iOS IPA workflow
+name: Build BetterTG.Windows
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Windows/**'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build core (net8.0)
+        run: dotnet build BetterTG.Windows.csproj -c Release -f net8.0 -v minimal
+      - name: Upload core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterTG.Windows-net8.0
+          path: Windows/bin/Release/net8.0/**
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build windows TFM
+        run: dotnet build BetterTG.Windows.csproj -c Release -f net8.0-windows10.0.19041.0 -v minimal
+      - name: Upload windows artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterTG.Windows-net8.0-windows
+          path: Windows/bin/Release/net8.0-windows10.0.19041.0/**
+          if-no-files-found: warn

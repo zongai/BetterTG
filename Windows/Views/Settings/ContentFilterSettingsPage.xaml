@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BetterTG.Windows.Views.Settings.ContentFilterSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <ScrollViewer Padding="24,16">
+        <StackPanel Spacing="10" MaxWidth="720">
+            <TextBlock Text="内容过滤" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,8"/>
+
+            <ToggleSwitch Header="启用内容过滤" IsOn="{x:Bind ViewModel.ContentFilterEnabled, Mode=TwoWay}"/>
+            <ToggleSwitch Header="隐藏赞助消息" IsOn="{x:Bind ViewModel.HideAds, Mode=TwoWay}"/>
+            <TextBlock Text="白名单优先于黑名单。匹配为消息文本子串（不区分大小写）。"
+                       TextWrapping="Wrap" Opacity="0.7"/>
+
+            <TextBlock Text="白名单" Opacity="0.7" Margin="0,12,0,0"/>
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox PlaceholderText="添加白名单词…" Text="{x:Bind ViewModel.NewWhitelistItem, Mode=TwoWay}"/>
+                <Button Grid.Column="1" Content="添加" Command="{x:Bind ViewModel.AddWhitelistCommand}"/>
+            </Grid>
+            <ListView ItemsSource="{x:Bind ViewModel.Whitelist}" MaxHeight="200">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="删除" Tag="{Binding}" Click="OnRemoveWhitelist"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock Text="黑名单" Opacity="0.7" Margin="0,12,0,0"/>
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox PlaceholderText="添加黑名单词…" Text="{x:Bind ViewModel.NewBlacklistItem, Mode=TwoWay}"/>
+                <Button Grid.Column="1" Content="添加" Command="{x:Bind ViewModel.AddBlacklistCommand}"/>
+            </Grid>
+            <ListView ItemsSource="{x:Bind ViewModel.Blacklist}" MaxHeight="200">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="删除" Tag="{Binding}" Click="OnRemoveBlacklist"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

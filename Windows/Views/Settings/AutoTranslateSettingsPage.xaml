@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BetterTG.Windows.Views.Settings.AutoTranslateSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <ScrollViewer Padding="24,16">
+        <StackPanel Spacing="10" MaxWidth="720">
+            <TextBlock Text="自动翻译" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,8"/>
+
+            <ToggleSwitch Header="启用自动翻译" IsOn="{x:Bind ViewModel.AutoTranslateEnabled, Mode=TwoWay}"/>
+            <ToggleSwitch Header="显示双语（原文 + 译文）" IsOn="{x:Bind ViewModel.ShowBilingual, Mode=TwoWay}"/>
+
+            <TextBox Header="目标语言代码（如 zh、en、ja）"
+                     Text="{x:Bind ViewModel.TargetLanguage, Mode=TwoWay}"/>
+
+            <TextBlock Text="引擎顺序（可排序 / 启用）" Opacity="0.7" Margin="0,12,0,0"/>
+            <ListView x:Name="EngineList" ItemsSource="{x:Bind ViewModel.Engines}"
+                      SelectionMode="Single">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="需 Key" Opacity="0.5"
+                                       Visibility="{Binding RequiresApiKey}"
+                                       VerticalAlignment="Center"/>
+                            <ToggleSwitch Grid.Column="2" IsOn="{Binding Enabled, Mode=TwoWay}"/>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                <Button Content="↑" Click="OnMoveUp" Tag="{Binding}" Padding="8,4"/>
+                                <Button Content="↓" Click="OnMoveDown" Tag="{Binding}" Padding="8,4"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBox Header="DeepL API Keys（多行或逗号分隔，自动轮换）"
+                     Text="{x:Bind ViewModel.DeepLKeys, Mode=TwoWay}"
+                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
+
+            <TextBox Header="Azure Translator Key"
+                     Text="{x:Bind ViewModel.AzureKey, Mode=TwoWay}"/>
+            <TextBox Header="Azure Region（如 eastasia）"
+                     Text="{x:Bind ViewModel.AzureRegion, Mode=TwoWay}"/>
+
+            <ToggleSwitch Header="启用翻译缓存" IsOn="{x:Bind ViewModel.TranslationCacheEnabled, Mode=TwoWay}"/>
+            <TextBlock Text="{x:Bind ViewModel.CacheCount, Mode=OneWay, StringFormat='缓存条目: {0}'}"/>
+            <Button Content="清空翻译缓存" Command="{x:Bind ViewModel.ClearCacheCommand}"/>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
