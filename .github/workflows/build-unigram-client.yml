@@ -1,0 +1,138 @@
+# Attempt full Unigram (Telegram for Windows) build with BetterTG sources injected.
+# This is heavy: vcpkg + TDLib + WinUI. Use workflow_dispatch only.
+name: Build Unigram Client (BetterTG)
+
+on:
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout BetterTG (for Windows extension sources)
+        uses: actions/checkout@v4
+        with:
+          path: BetterTG
+
+      - name: Verify API secrets
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_ID }}")) {
+            throw "Missing secret TELEGRAM_API_ID"
+          }
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_HASH }}")) {
+            throw "Missing secret TELEGRAM_API_HASH"
+          }
+          Write-Host "API secrets present."
+
+      - name: Install CMake
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup PHP (TDLib codegen)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Clone Unigram (recursive, develop)
+        shell: pwsh
+        run: |
+          git clone --recursive --depth 1 --branch develop https://github.com/TelegramMessenger/Unigram.git Unigram
+          # depth 1 may break submodules that need history; retry full submodule update
+          cd Unigram
+          git submodule update --init --recursive --depth 1
+          Write-Host "Unigram tree:"
+          Get-ChildItem | Select-Object Name
+
+      - name: Write Constants.Secret.cs
+        shell: pwsh
+        run: |
+          $apiId = "${{ secrets.TELEGRAM_API_ID }}"
+          $apiHash = "${{ secrets.TELEGRAM_API_HASH }}"
+          $content = @"
+          namespace Telegram
+          {
+              public static partial class Constants
+              {
+                  static Constants()
+                  {
+                      ApiId = $apiId;
+                      ApiHash = "$apiHash";
+                      AppChannel = "";
+                  }
+              }
+          }
+          "@
+          $path = "Unigram/Telegram/Constants.Secret.cs"
+          Set-Content -Path $path -Value $content -Encoding UTF8
+          Write-Host "Wrote $path"
+
+      - name: Inject BetterTG sources
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 `
+            -UnigramRoot (Resolve-Path Unigram) `
+            -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build TDLib (x64 windows) — may take long
+        working-directory: Unigram/Libraries/tdjson
+        shell: pwsh
+        run: |
+          if (Test-Path .\build.ps1) {
+            powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64
+          } else {
+            Write-Host "tdjson/build.ps1 not found; listing Libraries:"
+            Get-ChildItem .. -Recurse -Depth 2 | Select-Object FullName
+            throw "TDLib build script missing"
+          }
+        continue-on-error: false
+
+      - name: Build Unigram (Release x64)
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          # Prefer documented scripts if present
+          if (Test-Path .\Build.WinUI.ps1) {
+            powershell -ExecutionPolicy Bypass ./Build.WinUI.ps1
+          } elseif (Test-Path .\Build.ps1) {
+            powershell -ExecutionPolicy Bypass ./Build.ps1
+          } else {
+            $sln = Get-ChildItem -Filter *.sln | Select-Object -First 1
+            if (-not $sln) { $sln = Get-ChildItem -Filter *.slnx | Select-Object -First 1 }
+            if (-not $sln) { throw "No solution file found" }
+            msbuild $sln.Name /p:Configuration=Release /p:Platform=x64 /m /v:minimal
+          }
+
+      - name: Collect output
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Get-ChildItem -Recurse Unigram -Include *.msix,*.msixbundle,*.appx,*.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Release|publish|AppPackages' } |
+            Select-Object -First 30 FullName, Length |
+            Format-Table -AutoSize
+          # Copy candidates
+          Get-ChildItem -Recurse Unigram -Include *.msix,*.msixbundle -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName out/ -Force }
+          Get-ChildItem out | Format-Table Name, Length
+
+      - name: Upload client artifacts
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Unigram-BetterTG-client
+          path: out/**
+          if-no-files-found: warn
