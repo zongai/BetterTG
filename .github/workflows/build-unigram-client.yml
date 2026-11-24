@@ -61,30 +61,28 @@ jobs:
         run: |
           $apiId = "${{ secrets.TELEGRAM_API_ID }}"
           $apiHash = "${{ secrets.TELEGRAM_API_HASH }}"
-          $content = @"
-namespace Telegram
-{
-    public static partial class Constants
-    {
-        static Constants()
-        {
-            ApiId = $apiId;
-            ApiHash = "$apiHash";
-            AppChannel = "";
-        }
-    }
-}
-"@
+          $lines = @(
+            'namespace Telegram',
+            '{',
+            '    public static partial class Constants',
+            '    {',
+            '        static Constants()',
+            '        {',
+            "            ApiId = $apiId;",
+            "            ApiHash = `"$apiHash`";",
+            '            AppChannel = "";',
+            '        }',
+            '    }',
+            '}'
+          )
           $path = "Unigram/Telegram/Constants.Secret.cs"
-          Set-Content -Path $path -Value $content -Encoding UTF8
+          Set-Content -Path $path -Value ($lines -join "`n") -Encoding UTF8
           Write-Host "Wrote $path"
 
       - name: Inject BetterTG sources
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 `
-            -UnigramRoot (Resolve-Path Unigram) `
-            -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
+          powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 -UnigramRoot (Resolve-Path Unigram) -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
 
       - name: Pre-build Telegram.WinUI.Rewriter (path fix)
         working-directory: Unigram
@@ -95,8 +93,7 @@ namespace Telegram
           $expectedDir = "Telegram.WinUI.Rewriter\bin\Release\net11.0"
           $expectedDll = Join-Path $expectedDir "Telegram.WinUI.Rewriter.dll"
           if (-not (Test-Path $expectedDll)) {
-            $found = Get-ChildItem -Recurse "Telegram.WinUI.Rewriter\bin" -Filter "Telegram.WinUI.Rewriter.dll" -ErrorAction SilentlyContinue |
-              Select-Object -First 1
+            $found = Get-ChildItem -Recurse "Telegram.WinUI.Rewriter\bin" -Filter "Telegram.WinUI.Rewriter.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $found) { throw "Rewriter DLL not produced" }
             New-Item -ItemType Directory -Force -Path $expectedDir | Out-Null
             Copy-Item $found.FullName $expectedDll -Force
