@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    CI-friendly library project.
-    - Core services/models/helpers compile on net8.0 (any OS).
-    - WinUI views compile only when TargetFramework is windows and WINUI is enabled.
+    Core library for CI and embedding into Unigram.
+    XAML pages under Views/ are reference implementations — compile them inside
+    the Unigram host project (see Docs/INTEGRATION.md), not in this library.
   -->
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net8.0-windows10.0.19041.0</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BetterTG.Windows</RootNamespace>
@@ -13,10 +13,8 @@
     <Description>BetterTG fork extensions for Unigram (Windows). Does not affect the iOS client.</Description>
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <EnableDefaultPageItems>false</EnableDefaultPageItems>
   </PropertyGroup>
 
-  <!-- Core (all TFMs) -->
   <ItemGroup>
     <Compile Include="Models\**\*.cs" />
     <Compile Include="Services\**\*.cs" />
@@ -25,18 +23,10 @@
     <Compile Include="ViewModels\**\*.cs" />
   </ItemGroup>
 
-  <!-- Windows + WinUI only -->
-  <PropertyGroup Condition="$([MSBuild]::GetTargetFrameworkIdentifier('$(TargetFramework)')) == '.NETCoreApp' AND $(TargetFramework.Contains('windows'))">
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <UseWinUI>true</UseWinUI>
-    <WindowsSdkPackageVersion>10.0.19041.38</WindowsSdkPackageVersion>
-    <DefineConstants>$(DefineConstants);WINUI;WINDOWS_UWP</DefineConstants>
-  </PropertyGroup>
-
-  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
-    <Compile Include="Views\**\*.cs" />
-    <Page Include="Views\**\*.xaml" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240627000" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" PrivateAssets="all" />
+  <!-- Views/*.xaml + code-behind require WinUI; keep as content for host projects -->
+  <ItemGroup>
+    <None Include="Views\**\*" />
+    <None Include="Docs\**\*" />
+    <None Include="README.md" />
   </ItemGroup>
 </Project>
