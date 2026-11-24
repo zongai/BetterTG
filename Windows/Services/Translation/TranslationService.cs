@@ -184,24 +184,25 @@ namespace BetterTG.Windows.Services.Translation
         }
 
         /// <summary>Force translate regardless of auto-translate switch (e.g. context menu).</summary>
-        public Task<MessageTranslationState> ForceTranslateAsync(
+        public async Task<MessageTranslationState> ForceTranslateAsync(
             long chatId, long messageId, string originalText, CancellationToken ct = default)
         {
-            // Temporarily ensure path runs: clear state then translate with a one-shot override
             ClearState(chatId, messageId);
-            // Use internal path that ignores IsAutoTranslateEnabled by setting a short-lived exception
             var settings = BetterTGSettings.Current;
             var prev = settings.GetChatExceptions();
             var had = prev.TryGetValue(chatId, out var old);
             settings.SetChatException(chatId, true);
-            return TranslateMessageAsync(chatId, messageId, originalText, ct).ContinueWith(t =>
+            try
+            {
+                return await TranslateMessageAsync(chatId, messageId, originalText, ct).ConfigureAwait(false);
+            }
+            finally
             {
                 if (had)
                     settings.SetChatException(chatId, old);
                 else
                     settings.SetChatException(chatId, null);
-                return t.Result;
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).Unwrap();
+            }
         }
 
         public async Task<TranslationResult> TranslateWithChainAsync(
