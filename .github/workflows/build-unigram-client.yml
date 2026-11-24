@@ -4,15 +4,6 @@ name: Build Unigram Client (BetterTG)
 
 on:
   workflow_dispatch:
-    inputs:
-      unpackaged:
-        description: "Build unpackaged folder (exe) instead of MSIX bundle"
-        type: boolean
-        default: true
-      skip_native:
-        description: "Skip rebuilding Telegram.Native (use if already built)"
-        type: boolean
-        default: false
 
 env:
   DOTNET_NOLOGO: true
@@ -99,8 +90,6 @@ namespace Telegram
         working-directory: Unigram
         shell: pwsh
         run: |
-          # Unigram expects: Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll
-          # Building with Platform=x64 places it under bin\x64\Release\ instead.
           $proj = "Telegram.WinUI.Rewriter\Telegram.WinUI.Rewriter.csproj"
           dotnet build $proj -c Release -p:Platform=AnyCPU -v:minimal
           $expectedDir = "Telegram.WinUI.Rewriter\bin\Release\net11.0"
@@ -126,40 +115,26 @@ namespace Telegram
           if (-not (Test-Path .\build.ps1)) { throw "tdjson/build.ps1 missing" }
           powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64
 
-      - name: Build Unigram WinUI (Release x64)
+      - name: Build Unigram WinUI unpackaged (Release x64)
         working-directory: Unigram
         shell: pwsh
         run: |
           if (-not (Test-Path .\Build.WinUI.ps1)) { throw "Build.WinUI.ps1 missing" }
-          $args = @('-Configuration', 'Release', '-Platform', 'x64')
-          if ('${{ inputs.unpackaged }}' -eq 'true') {
-            $args += '-Unpackaged'
-          }
-          if ('${{ inputs.skip_native }}' -eq 'true') {
-            $args += '-SkipNative'
-          }
-          Write-Host "Running Build.WinUI.ps1 $($args -join ' ')"
-          powershell -ExecutionPolicy Bypass -File .\Build.WinUI.ps1 @args
+          Write-Host "Running Build.WinUI.ps1 -Unpackaged"
+          powershell -ExecutionPolicy Bypass -File .\Build.WinUI.ps1 -Configuration Release -Platform x64 -Unpackaged
 
       - name: Collect output
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          # Unpackaged publish folder
           Get-ChildItem -Recurse Unigram\Telegram\bin -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -eq 'publish' -or $_.FullName -match 'winui-unpackaged' } |
             ForEach-Object {
               Write-Host "Found publish dir: $($_.FullName)"
-              $dest = "out\$($_.Parent.Name)-$($_.Name)"
-              Copy-Item $_.FullName $dest -Recurse -Force -ErrorAction SilentlyContinue
+              Copy-Item $_.FullName "out\publish" -Recurse -Force -ErrorAction SilentlyContinue
             }
-          # MSIX / APPX
           Get-ChildItem -Recurse Unigram -Include *.msix,*.msixbundle,*.appx -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              Write-Host "Found package: $($_.FullName)"
-              Copy-Item $_.FullName out\ -Force
-            }
-          # Any Telegram*.exe under Release
+            ForEach-Object { Copy-Item $_.FullName out\ -Force }
           Get-ChildItem -Recurse Unigram -Filter "Telegram*.exe" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match 'Release|publish|winui' } |
             Select-Object -First 20 |
