@@ -84,23 +84,63 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 -UnigramRoot (Resolve-Path Unigram) -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
 
-      - name: Pre-build Telegram.WinUI.Rewriter (path fix)
+      - name: Patch tool output paths (AnyCPU tools vs x64 app)
         working-directory: Unigram
         shell: pwsh
         run: |
-          $proj = "Telegram.WinUI.Rewriter\Telegram.WinUI.Rewriter.csproj"
-          dotnet build $proj -c Release -p:Platform=AnyCPU -v:minimal
-          $expectedDir = "Telegram.WinUI.Rewriter\bin\Release\net11.0"
-          $expectedDll = Join-Path $expectedDir "Telegram.WinUI.Rewriter.dll"
-          if (-not (Test-Path $expectedDll)) {
-            $found = Get-ChildItem -Recurse "Telegram.WinUI.Rewriter\bin" -Filter "Telegram.WinUI.Rewriter.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $found) { throw "Rewriter DLL not produced" }
-            New-Item -ItemType Directory -Force -Path $expectedDir | Out-Null
-            Copy-Item $found.FullName $expectedDll -Force
-            Write-Host "Copied rewriter from $($found.FullName) -> $expectedDll"
-          } else {
-            Write-Host "Rewriter OK at $expectedDll"
+          # Unigram expects build tools under bin\Release\net11.0 but solution Platform=x64
+          # places them under bin\x64\Release\net11.0. Patch targets to accept both.
+          $td = "Telegram\TdSchema.targets"
+          $text = Get-Content $td -Raw
+          $old = '<TdSchemaCliDir>$(MSBuildThisFileDirectory)..\Telegram.Generators.Cli\bin\$(Configuration)\net11.0</TdSchemaCliDir>'
+          $new = @'
+<TdSchemaCliDir>$(MSBuildThisFileDirectory)..\Telegram.Generators.Cli\bin\$(Configuration)\net11.0</TdSchemaCliDir>
+    <TdSchemaCliDir Condition="!Exists('$(TdSchemaCliDir)\Telegram.Generators.Cli.dll')">$(MSBuildThisFileDirectory)..\Telegram.Generators.Cli\bin\x64\$(Configuration)\net11.0</TdSchemaCliDir>
+    <TdSchemaCliDir Condition="!Exists('$(TdSchemaCliDir)\Telegram.Generators.Cli.dll')">$(MSBuildThisFileDirectory)..\Telegram.Generators.Cli\bin\AnyCPU\$(Configuration)\net11.0</TdSchemaCliDir>
+'@
+          if ($text -notlike "*$($old.Substring(0,40))*") { throw "TdSchema.targets pattern not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $td -Value $text -Encoding UTF8
+          Write-Host "Patched TdSchema.targets"
+
+          $winui = "Telegram\Telegram.WinUI.csproj"
+          $w = Get-Content $winui -Raw
+          $oldR = '<WinUIRewriter>$(MSBuildThisFileDirectory)..\Telegram.WinUI.Rewriter\bin\$(Configuration)\net11.0\Telegram.WinUI.Rewriter.dll</WinUIRewriter>'
+          $newR = @'
+<WinUIRewriter>$(MSBuildThisFileDirectory)..\Telegram.WinUI.Rewriter\bin\$(Configuration)\net11.0\Telegram.WinUI.Rewriter.dll</WinUIRewriter>
+    <WinUIRewriter Condition="!Exists('$(WinUIRewriter)')">$(MSBuildThisFileDirectory)..\Telegram.WinUI.Rewriter\bin\x64\$(Configuration)\net11.0\Telegram.WinUI.Rewriter.dll</WinUIRewriter>
+'@
+          if ($w -notlike "*WinUIRewriter*") { throw "WinUIRewriter not found" }
+          $w = $w.Replace($oldR, $newR)
+          Set-Content -Path $winui -Value $w -Encoding UTF8
+          Write-Host "Patched Telegram.WinUI.csproj Rewriter path"
+
+      - name: Pre-build AnyCPU build tools
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          function Ensure-Tool([string]$proj, [string]$dllName, [string]$expectedRel) {
+            Write-Host "Building $proj ..."
+            dotnet build $proj -c Release -p:Platform=AnyCPU -v:minimal
+            $expected = Join-Path (Get-Location) $expectedRel
+            $dir = Split-Path $expected -Parent
+            if (-not (Test-Path $expected)) {
+              $found = Get-ChildItem -Recurse (Split-Path $proj -Parent) -Filter $dllName -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match '\\bin\\' } | Select-Object -First 1
+              if (-not $found) { throw "$dllName not produced for $proj" }
+              New-Item -ItemType Directory -Force -Path $dir | Out-Null
+              Copy-Item $found.FullName $expected -Force
+              # also copy sibling deps from same folder
+              Get-ChildItem $found.DirectoryName -Filter "*.dll" | ForEach-Object {
+                Copy-Item $_.FullName (Join-Path $dir $_.Name) -Force
+              }
+              Write-Host "Copied $($found.FullName) -> $expected"
+            } else {
+              Write-Host "OK $expected"
+            }
           }
+          Ensure-Tool "Telegram.WinUI.Rewriter\Telegram.WinUI.Rewriter.csproj" "Telegram.WinUI.Rewriter.dll" "Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll"
+          Ensure-Tool "Telegram.Generators.Cli\Telegram.Generators.Cli.csproj" "Telegram.Generators.Cli.dll" "Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll"
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -111,6 +151,42 @@ jobs:
         run: |
           if (-not (Test-Path .\build.ps1)) { throw "tdjson/build.ps1 missing" }
           powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64
+          $tl = Join-Path (Get-Location) "td_api.tl"
+          if (-not (Test-Path $tl)) {
+            $found = Get-ChildItem -Recurse -Filter "td_api.tl" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Copy-Item $found.FullName $tl -Force
+              Write-Host "Copied td_api.tl from $($found.FullName)"
+            } else {
+              Write-Host "WARNING: td_api.tl not found after TDLib build"
+              Get-ChildItem -Recurse -Filter "*.tl" | Select-Object FullName
+            }
+          } else {
+            Write-Host "td_api.tl present ($((Get-Item $tl).Length) bytes)"
+          }
+
+      - name: Re-sync build tools to expected paths
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          # MSBuild may have rebuilt tools under bin\x64 during dependency walk; re-copy.
+          function Sync-Tool([string]$searchRoot, [string]$dllName, [string]$destRel) {
+            $dest = Join-Path (Get-Location) $destRel
+            $dir = Split-Path $dest -Parent
+            $found = Get-ChildItem -Recurse $searchRoot -Filter $dllName -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\bin\\' } |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if (-not $found) { Write-Host "WARN: $dllName not found under $searchRoot"; return }
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            Copy-Item $found.FullName $dest -Force
+            Get-ChildItem $found.DirectoryName -Filter "*.dll" | ForEach-Object {
+              Copy-Item $_.FullName (Join-Path $dir $_.Name) -Force
+            }
+            Write-Host "Synced $($found.FullName) -> $dest"
+          }
+          Sync-Tool "Telegram.WinUI.Rewriter" "Telegram.WinUI.Rewriter.dll" "Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll"
+          Sync-Tool "Telegram.Generators.Cli" "Telegram.Generators.Cli.dll" "Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll"
+          Sync-Tool "Telegram.Generators" "Telegram.Generators.dll" "Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.dll"
 
       - name: Build Unigram WinUI unpackaged (Release x64)
         working-directory: Unigram
