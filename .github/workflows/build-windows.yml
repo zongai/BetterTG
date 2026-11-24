@@ -1,4 +1,4 @@
-# Build BetterTG.Windows core library — independent of iOS IPA workflow
+# Build BetterTG.Windows library + publish WinExe
 name: Build BetterTG.Windows
 
 on:
@@ -9,7 +9,7 @@ on:
       - '.github/workflows/build-windows.yml'
 
 jobs:
-  build:
+  build-lib:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -19,19 +19,36 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Build
+      - name: Build library
         run: dotnet build BetterTG.Windows.csproj -c Release -v minimal
-      - name: List output
-        run: |
-          echo "Build output:"
-          find bin/Release -type f -name "*.dll" -o -name "*.pdb" | sort
-          ls -la bin/Release/net8.0/
-      # Artifact upload optional — account may hit free storage quota
-      - name: Upload artifact
-        if: success()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
+
+  publish-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          name: BetterTG.Windows
-          path: Windows/bin/Release/net8.0/**
-          if-no-files-found: warn
+          dotnet-version: '8.0.x'
+      - name: Publish self-contained win-x64 exe
+        working-directory: Windows/App
+        run: |
+          dotnet publish BetterTG.Windows.App.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -v minimal
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          $out = "Windows/publish"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $pub = Get-ChildItem -Recurse "Windows/App/bin/Release/net8.0-windows/win-x64/publish" -Filter "BetterTG.Windows.exe" | Select-Object -First 1
+          if (-not $pub) { Get-ChildItem -Recurse Windows/App/bin | Out-String | Write-Host; throw "exe not found" }
+          Copy-Item $pub.FullName "$out/BetterTG.Windows.exe"
+          Copy-Item "Windows/README.md" "$out/" -ErrorAction SilentlyContinue
+          Copy-Item "Windows/Docs" "$out/Docs" -Recurse -ErrorAction SilentlyContinue
+          Get-ChildItem $out | Format-Table Name, Length
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: BetterTG.Windows-exe
+          path: Windows/publish/**
+          if-no-files-found: error

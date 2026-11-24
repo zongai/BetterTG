@@ -64,3 +64,11 @@ dotnet build BetterTG.Windows.csproj
 ## 许可
 
 与 Unigram 一致，扩展代码按 **GPL-3.0** 使用；接入 Unigram 时遵循其 LICENSE。
+
+## 可执行文件 (WinExe)
+
+`App/` 为 WPF 设置宿主，CI 会发布自包含单文件：
+
+- `BetterTG.Windows.exe`（win-x64, self-contained）
+
+用于验证扩展设置与库逻辑。**完整 Telegram 聊天客户端**需将本库集成进 Unigram（见 `Docs/INTEGRATION.md`），无法仅由本仓库单独生成官方级完整客户端。
