@@ -23,12 +23,8 @@ jobs:
       - name: Verify API secrets
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_ID }}")) {
-            throw "Missing secret TELEGRAM_API_ID"
-          }
-          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_HASH }}")) {
-            throw "Missing secret TELEGRAM_API_HASH"
-          }
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_ID }}")) { throw "Missing secret TELEGRAM_API_ID" }
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_HASH }}")) { throw "Missing secret TELEGRAM_API_HASH" }
           Write-Host "API secrets present."
 
       - name: Setup MSVC / dev cmd
@@ -74,9 +70,7 @@ jobs:
             '    }',
             '}'
           )
-          $path = "Unigram/Telegram/Constants.Secret.cs"
-          Set-Content -Path $path -Value ($lines -join "`n") -Encoding UTF8
-          Write-Host "Wrote $path"
+          Set-Content -Path "Unigram/Telegram/Constants.Secret.cs" -Value ($lines -join "`n") -Encoding UTF8
 
       - name: Inject BetterTG sources
         shell: pwsh
@@ -88,24 +82,36 @@ jobs:
         shell: pwsh
         run: |
           function Stage-Tool($searchRoot, $dllName, $destRel) {
-            $dest = Join-Path (Get-Location) $destRel
+            $dest = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $destRel))
             $dir = Split-Path $dest -Parent
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             $found = Get-ChildItem -Recurse $searchRoot -Filter $dllName -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match '\\bin\\' } |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if (-not $found) { throw "$dllName not found under $searchRoot" }
-            Copy-Item $found.FullName $dest -Force
-            Get-ChildItem $found.DirectoryName -Filter '*.dll' | ForEach-Object {
-              Copy-Item $_.FullName (Join-Path $dir $_.Name) -Force
+            $src = [System.IO.Path]::GetFullPath($found.FullName)
+            if ($src -ne $dest) {
+              Copy-Item $src $dest -Force
+              Write-Host "Staged $src -> $dest"
+            } else {
+              Write-Host "Already at $dest"
             }
-            Write-Host "Staged $($found.FullName) -> $dest"
+            Get-ChildItem $found.DirectoryName -Filter '*.dll' | ForEach-Object {
+              $d2 = Join-Path $dir $_.Name
+              $s2 = [System.IO.Path]::GetFullPath($_.FullName)
+              $d2f = [System.IO.Path]::GetFullPath($d2)
+              if ($s2 -ne $d2f) { Copy-Item $s2 $d2f -Force }
+            }
           }
           dotnet build Telegram.WinUI.Rewriter\Telegram.WinUI.Rewriter.csproj -c Release -p:Platform=AnyCPU -v:minimal
           dotnet build Telegram.Generators.Cli\Telegram.Generators.Cli.csproj -c Release -p:Platform=AnyCPU -v:minimal
           Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll
           Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll
           Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.dll
+          # mirror to x64 path used when Platform leaks
+          Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\x64\Release\net11.0\Telegram.WinUI.Rewriter.dll
+          Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.Cli.dll
+          Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.dll
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -120,7 +126,7 @@ jobs:
           if (-not (Test-Path $tl)) {
             $found = Get-ChildItem -Recurse -Filter "td_api.tl" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($found) { Copy-Item $found.FullName $tl -Force; Write-Host "Copied td_api.tl from $($found.FullName)" }
-            else { Write-Host "WARNING: td_api.tl missing"; Get-ChildItem -Recurse -Filter "*.tl" | Select-Object FullName }
+            else { Write-Host "WARNING: td_api.tl missing" }
           } else { Write-Host "td_api.tl present ($((Get-Item $tl).Length) bytes)" }
 
       - name: Re-stage build tools after TDLib
@@ -128,23 +134,25 @@ jobs:
         shell: pwsh
         run: |
           function Stage-Tool($searchRoot, $dllName, $destRel) {
-            $dest = Join-Path (Get-Location) $destRel
+            $dest = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $destRel))
             $dir = Split-Path $dest -Parent
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             $found = Get-ChildItem -Recurse $searchRoot -Filter $dllName -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match '\\bin\\' } |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if (-not $found) { Write-Host "WARN: $dllName missing under $searchRoot"; return }
-            Copy-Item $found.FullName $dest -Force
+            $src = [System.IO.Path]::GetFullPath($found.FullName)
+            if ($src -ne $dest) { Copy-Item $src $dest -Force; Write-Host "Staged $src -> $dest" }
+            else { Write-Host "Already at $dest" }
             Get-ChildItem $found.DirectoryName -Filter '*.dll' | ForEach-Object {
-              Copy-Item $_.FullName (Join-Path $dir $_.Name) -Force
+              $d2 = [System.IO.Path]::GetFullPath((Join-Path $dir $_.Name))
+              $s2 = [System.IO.Path]::GetFullPath($_.FullName)
+              if ($s2 -ne $d2) { Copy-Item $s2 $d2 -Force }
             }
-            Write-Host "Staged $($found.FullName) -> $dest"
           }
           Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll
           Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll
           Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.dll
-          # Also stage under x64 path in case MSBuild picks that
           Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\x64\Release\net11.0\Telegram.WinUI.Rewriter.dll
           Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.Cli.dll
           Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.dll
@@ -154,7 +162,6 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path .\Build.WinUI.ps1)) { throw "Build.WinUI.ps1 missing" }
-          Write-Host "Running Build.WinUI.ps1 -Unpackaged"
           powershell -ExecutionPolicy Bypass -File .\Build.WinUI.ps1 -Configuration Release -Platform x64 -Unpackaged
 
       - name: Collect output
@@ -176,7 +183,6 @@ jobs:
               Write-Host "Found exe: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)"
               Copy-Item $_.FullName out\ -Force -ErrorAction SilentlyContinue
             }
-          Write-Host "=== out/ ==="
           Get-ChildItem -Recurse out -ErrorAction SilentlyContinue | Select-Object FullName, Length
 
       - name: Upload client artifacts
