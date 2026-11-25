@@ -164,6 +164,42 @@ jobs:
           Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.Cli.dll
           Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.dll
 
+      - name: Make optional native binaries non-fatal
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          # wallet-engine is not in the public Unigram tree (private/prebuilt). Without it
+          # MSB3030 fails the publish. Gate Content items on Exists().
+          $files = @(
+            "Telegram\Telegram.WinUI.csproj",
+            "Telegram\Telegram.csproj",
+            "Telegram\Telegram.Modern.csproj"
+          )
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) { continue }
+            $c = Get-Content $f -Raw
+            $orig = $c
+            # Add Condition=Exists if not already present on wallet_engine line
+            $c = [regex]::Replace($c,
+              '(<Content Include="\$\(TelegramRoot\)Libraries\\wallet-engine\\\$\(Platform\)\\wallet_engine\.dll"[^/]*?)(\s*/>)',
+              {
+                param($m)
+                if ($m.Groups[1].Value -match 'Condition=') { return $m.Value }
+                return $m.Groups[1].Value + ' Condition="Exists(''$(TelegramRoot)Libraries\wallet-engine\$(Platform)\wallet_engine.dll'')"' + $m.Groups[2].Value
+              })
+            if ($c -ne $orig) {
+              Set-Content -Path $f -Value $c -Encoding UTF8
+              Write-Host "Patched wallet_engine Exists() in $f"
+            } else {
+              Write-Host "No change or already conditioned: $f"
+            }
+          }
+          # Placeholder dir so paths resolve cleanly
+          New-Item -ItemType Directory -Force -Path "Libraries\wallet-engine\x64" | Out-Null
+          if (-not (Test-Path "Libraries\wallet-engine\x64\wallet_engine.dll")) {
+            Write-Host "wallet_engine.dll absent (expected for public clone); Content gated."
+          }
+
       - name: Build Unigram WinUI unpackaged (Release x64)
         working-directory: Unigram
         shell: pwsh
