@@ -121,13 +121,20 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path .\build.ps1)) { throw "tdjson/build.ps1 missing" }
-          powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64
+          powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64 -target windows
           $tl = Join-Path (Get-Location) "td_api.tl"
           if (-not (Test-Path $tl)) {
             $found = Get-ChildItem -Recurse -Filter "td_api.tl" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($found) { Copy-Item $found.FullName $tl -Force; Write-Host "Copied td_api.tl from $($found.FullName)" }
             else { Write-Host "WARNING: td_api.tl missing" }
-          } else { Write-Host "td_api.tl present ($((Get-Item $tl).Length) bytes)" }
+          } else { Write-Host "td_api.tl present ($((Get-Item $tl).Length) bytes)"
+          $winDir = Join-Path (Get-Location) "x64-windows"
+          if (-not (Test-Path (Join-Path $winDir "tdjson.dll"))) {
+            Write-Host "Listing Libraries/tdjson after build:"
+            Get-ChildItem -Recurse (Get-Location) -Filter "tdjson.dll" -ErrorAction SilentlyContinue | Select-Object FullName
+            throw "x64-windows/tdjson.dll missing after TDLib build (need -target windows)"
+          }
+          Write-Host "x64-windows TDLib OK:"; Get-ChildItem $winDir | Format-Table Name, Length }
 
       - name: Re-stage build tools after TDLib
         working-directory: Unigram
