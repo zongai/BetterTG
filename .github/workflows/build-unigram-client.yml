@@ -240,6 +240,32 @@ jobs:
             Write-Host "wallet_engine.dll absent (expected for public clone); Content gated."
           }
 
+      - name: Disable NativeAOT (avoid ucrtbase 0xC0000005 on user machines)
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          # Official Unigram works on reporter's PC; our AOT unpackaged payload crashes in
+          # System32\ucrtbase.dll (0xC0000005). Ship a non-AOT self-contained build for stability.
+          $csproj = "Telegram\Telegram.WinUI.csproj"
+          $c = Get-Content $csproj -Raw
+          $c2 = $c -replace "<PublishAot Condition=\"'\$\(Configuration\)' != 'Debug'\">true</PublishAot>",
+                             "<PublishAot>false</PublishAot>"
+          if ($c2 -eq $c) {
+            # fallback: force property at top of first PropertyGroup
+            $c2 = $c -replace "(<PropertyGroup>)", "`$1`r`n    <PublishAot>false</PublishAot>", 1
+          }
+          Set-Content -Path $csproj -Value $c2 -Encoding UTF8
+          Write-Host "PublishAot forced false in Telegram.WinUI.csproj"
+          # Also inject into Build.WinUI.ps1 Publish invocation
+          $ps1 = "Build.WinUI.ps1"
+          $p = Get-Content $ps1 -Raw
+          $p2 = $p.Replace("'-p:Unpackaged=true',", "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',")
+          if ($p2 -eq $p) { Write-Host "WARN: could not patch Build.WinUI.ps1 args" }
+          else {
+            Set-Content -Path $ps1 -Value $p2 -Encoding UTF8
+            Write-Host "Build.WinUI.ps1: added -p:PublishAot=false"
+          }
+
       - name: Build Unigram WinUI unpackaged (Release x64)
         working-directory: Unigram
         shell: pwsh
@@ -274,6 +300,12 @@ jobs:
             Get-ChildItem -Recurse "Unigram/Telegram/bin/winui-unpackaged" -ErrorAction SilentlyContinue |
               Select-Object -First 50 FullName
           }
+          # Official installer (if Inno Setup ran)
+          Get-ChildItem -Path "Unigram/Telegram/bin/winui-unpackaged" -Recurse -Filter "Telegram-*-setup.exe" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              Copy-Item $_.FullName "out/$($_.Name)" -Force
+              Write-Host "Setup: $($_.Name) ($([math]::Round($_.Length/1MB,1)) MB)"
+            }
           Get-ChildItem out -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
 
       - name: Upload client artifacts
