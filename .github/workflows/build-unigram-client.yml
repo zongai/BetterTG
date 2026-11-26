@@ -80,6 +80,43 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 -UnigramRoot (Resolve-Path Unigram) -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
 
+      - name: Patch upstream string key mismatch
+        working-directory: Unigram
+        shell: pwsh
+        run: |
+          # Upstream DeleteMessagesPopup references Strings keys that are not in Resources.xml
+          # (DeleteAllMessagesFromUsers / DeleteAllReactionsFromUsers). Map to existing keys /
+          # add placeholders so WinUI compiles. BetterTG-unrelated; pure upstream gap.
+          $popup = "Telegram/Views/Popups/DeleteMessagesPopup.xaml.cs"
+          if (Test-Path $popup) {
+            $c = Get-Content $popup -Raw
+            $c2 = $c.Replace("Strings.DeleteAllMessagesFromUsers", "Strings.DeleteAllFromUsers")
+            $c2 = $c2.Replace("Strings.DeleteAllReactionsFromUsers", "Strings.DeleteAllFromUsers")
+            if ($c2 -ne $c) {
+              Set-Content -Path $popup -Value $c2 -Encoding UTF8
+              Write-Host "Patched $popup string keys"
+            } else {
+              Write-Host "No string key replacements needed in popup (already aligned?)"
+            }
+          }
+          $xml = "Telegram/Strings/en/Resources.xml"
+          if (Test-Path $xml) {
+            $x = Get-Content $xml -Raw
+            $added = $false
+            if ($x -notmatch 'name="DeleteAllMessagesFromUsers"') {
+              $x = $x.Replace("</resources>", "  <string name=`"DeleteAllMessagesFromUsers`">Delete all messages from users</string>`n</resources>")
+              $added = $true
+            }
+            if ($x -notmatch 'name="DeleteAllReactionsFromUsers"') {
+              $x = $x.Replace("</resources>", "  <string name=`"DeleteAllReactionsFromUsers`">Delete all reactions from users</string>`n</resources>")
+              $added = $true
+            }
+            if ($added) {
+              Set-Content -Path $xml -Value $x -Encoding UTF8
+              Write-Host "Added missing keys to Resources.xml"
+            }
+          }
+
       - name: Pre-build AnyCPU tools and stage to expected paths
         working-directory: Unigram
         shell: pwsh
