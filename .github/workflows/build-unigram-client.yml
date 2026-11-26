@@ -244,26 +244,33 @@ jobs:
         working-directory: Unigram
         shell: pwsh
         run: |
-          # Official Unigram works on reporter's PC; our AOT unpackaged payload crashes in
-          # System32\ucrtbase.dll (0xC0000005). Ship a non-AOT self-contained build for stability.
+          # Official Unigram works on reporter's PC; AOT unpackaged crashed in ucrtbase (0xC0000005).
           $csproj = "Telegram\Telegram.WinUI.csproj"
           $c = Get-Content $csproj -Raw
-          $c2 = $c -replace "<PublishAot Condition=\"'\$\(Configuration\)' != 'Debug'\">true</PublishAot>",
-                             "<PublishAot>false</PublishAot>"
-          if ($c2 -eq $c) {
-            # fallback: force property at top of first PropertyGroup
-            $c2 = $c -replace "(<PropertyGroup>)", "`$1`r`n    <PublishAot>false</PublishAot>", 1
+          $old = '<PublishAot Condition="''$(Configuration)'' != ''Debug''">true</PublishAot>'
+          $new = '<PublishAot>false</PublishAot>'
+          if ($c.Contains($old)) {
+            $c = $c.Replace($old, $new)
+            Write-Host "Replaced PublishAot condition with false"
+          } elseif ($c -match 'PublishAot') {
+            $c = [regex]::Replace($c, '<PublishAot[^>]*>\s*true\s*</PublishAot>', '<PublishAot>false</PublishAot>')
+            Write-Host "Regex-forced PublishAot false"
+          } else {
+            $c = $c.Replace('<PropertyGroup>', "<PropertyGroup>`r`n    <PublishAot>false</PublishAot>", 1)
+            Write-Host "Inserted PublishAot false into first PropertyGroup"
           }
-          Set-Content -Path $csproj -Value $c2 -Encoding UTF8
-          Write-Host "PublishAot forced false in Telegram.WinUI.csproj"
-          # Also inject into Build.WinUI.ps1 Publish invocation
+          Set-Content -Path $csproj -Value $c -Encoding UTF8
+          Select-String -Path $csproj -Pattern 'PublishAot' | ForEach-Object { $_.Line.Trim() }
           $ps1 = "Build.WinUI.ps1"
           $p = Get-Content $ps1 -Raw
-          $p2 = $p.Replace("'-p:Unpackaged=true',", "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',")
-          if ($p2 -eq $p) { Write-Host "WARN: could not patch Build.WinUI.ps1 args" }
-          else {
-            Set-Content -Path $ps1 -Value $p2 -Encoding UTF8
+          $needle = "'-p:Unpackaged=true',"
+          $insert = "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',"
+          if ($p.Contains($needle) -and -not $p.Contains("PublishAot=false")) {
+            $p = $p.Replace($needle, $insert)
+            Set-Content -Path $ps1 -Value $p -Encoding UTF8
             Write-Host "Build.WinUI.ps1: added -p:PublishAot=false"
+          } else {
+            Write-Host "Build.WinUI.ps1 patch skipped or already present"
           }
 
       - name: Build Unigram WinUI unpackaged (Release x64)
