@@ -211,22 +211,30 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Get-ChildItem -Recurse Unigram\Telegram\bin -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -eq 'publish' -or $_.FullName -match 'winui-unpackaged' } |
-            ForEach-Object {
-              Write-Host "Found publish dir: $($_.FullName)"
-              Copy-Item $_.FullName "out\publish" -Recurse -Force -ErrorAction SilentlyContinue
-            }
-          Get-ChildItem -Recurse Unigram -Include *.msix,*.msixbundle,*.appx -ErrorAction SilentlyContinue |
-            ForEach-Object { Copy-Item $_.FullName out\ -Force }
-          Get-ChildItem -Recurse Unigram -Filter "Telegram*.exe" -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match 'Release|publish|winui' } |
-            Select-Object -First 20 |
-            ForEach-Object {
-              Write-Host "Found exe: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)"
-              Copy-Item $_.FullName out\ -Force -ErrorAction SilentlyContinue
-            }
-          Get-ChildItem -Recurse out -ErrorAction SilentlyContinue | Select-Object FullName, Length
+          # Build.WinUI.ps1 -Unpackaged already creates the correct package:
+          #   Telegram/bin/winui-unpackaged/x64/Release/Telegram-*-x64.zip  (contains payload/)
+          #   Telegram/bin/winui-unpackaged/x64/Release/publish/Telegram.exe + deps
+          # Do NOT recurse every nested publish dir or copy bare Telegram.exe stubs.
+          $zip = Get-ChildItem -Path "Unigram/Telegram/bin/winui-unpackaged" -Recurse -Filter "Telegram-*-x64.zip" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($zip) {
+            Copy-Item $zip.FullName "out/$($zip.Name)" -Force
+            Write-Host "Official zip: $($zip.FullName) ($([math]::Round($zip.Length/1MB,1)) MB)"
+          } else {
+            Write-Host "WARNING: Telegram-*-x64.zip not found under winui-unpackaged"
+          }
+          $pub = "Unigram/Telegram/bin/winui-unpackaged/x64/Release/publish"
+          if (Test-Path (Join-Path $pub "Telegram.exe")) {
+            $len = (Get-Item (Join-Path $pub "Telegram.exe")).Length
+            Write-Host "Publish folder OK ($([math]::Round($len/1MB,1)) MB Telegram.exe)"
+            Compress-Archive -Path "$pub/*" -DestinationPath "out/Telegram-publish-folder-x64.zip" -Force
+            Write-Host "Wrote out/Telegram-publish-folder-x64.zip"
+          } else {
+            Write-Host "WARNING: missing $pub/Telegram.exe"
+            Get-ChildItem -Recurse "Unigram/Telegram/bin/winui-unpackaged" -ErrorAction SilentlyContinue |
+              Select-Object -First 50 FullName
+          }
+          Get-ChildItem out -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
 
       - name: Upload client artifacts
         uses: actions/upload-artifact@v4
