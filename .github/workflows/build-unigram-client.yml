@@ -43,13 +43,16 @@ jobs:
             11.0.x
             8.0.x
 
-      - name: Clone Unigram (recursive, develop)
+      - name: Clone Unigram (recursive, pinned)
         shell: pwsh
         run: |
-          git clone --recursive --depth 1 --branch develop https://github.com/TelegramMessenger/Unigram.git Unigram
+          # Pin away from broken develop tip (CS0117 Strings.DeleteAll*FromUsers).
+          # Commit from 2026-11-25 ~07:08, matching last successful CI window.
+          git clone https://github.com/TelegramMessenger/Unigram.git Unigram
           cd Unigram
-          git submodule update --init --recursive --depth 1
-          Write-Host "Unigram HEAD: $(git rev-parse --short HEAD)"
+          git checkout da80f3492ee93f0e7e78d9462d5c258b21fcc315
+          git submodule update --init --recursive
+          Write-Host "Unigram HEAD: $(git rev-parse HEAD)"
 
       - name: Write Constants.Secret.cs
         shell: pwsh
