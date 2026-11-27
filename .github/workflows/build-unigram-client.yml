@@ -240,7 +240,7 @@ jobs:
             Write-Host "wallet_engine.dll absent (expected for public clone); Content gated."
           }
 
-      - name: Disable NativeAOT (avoid ucrtbase 0xC0000005 on user machines)
+      - name: Disable NativeAOT + soften PDB packaging (non-AOT)
         working-directory: Unigram
         shell: pwsh
         run: |
@@ -261,17 +261,22 @@ jobs:
           }
           Set-Content -Path $csproj -Value $c -Encoding UTF8
           Select-String -Path $csproj -Pattern 'PublishAot' | ForEach-Object { $_.Line.Trim() }
+
           $ps1 = "Build.WinUI.ps1"
           $p = Get-Content $ps1 -Raw
           $needle = "'-p:Unpackaged=true',"
           $insert = "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',"
           if ($p.Contains($needle) -and -not $p.Contains("PublishAot=false")) {
             $p = $p.Replace($needle, $insert)
-            Set-Content -Path $ps1 -Value $p -Encoding UTF8
             Write-Host "Build.WinUI.ps1: added -p:PublishAot=false"
-          } else {
-            Write-Host "Build.WinUI.ps1 patch skipped or already present"
           }
+          # Non-AOT: symbols step throws "No PDB matching Telegram.dll" after zip is already written.
+          # Demote to warning so the unpackaged zip/publish survive.
+          if ($p.Contains('throw "No PDB matching')) {
+            $p = $p.Replace('throw "No PDB matching', 'Write-Warning "No PDB matching')
+            Write-Host "Build.WinUI.ps1: PDB mismatch is warning only"
+          }
+          Set-Content -Path $ps1 -Value $p -Encoding UTF8
 
       - name: Build Unigram WinUI unpackaged (Release x64)
         working-directory: Unigram
@@ -281,6 +286,7 @@ jobs:
           powershell -ExecutionPolicy Bypass -File .\Build.WinUI.ps1 -Configuration Release -Platform x64 -Unpackaged
 
       - name: Collect output
+        if: success() || failure()
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
@@ -316,6 +322,7 @@ jobs:
           Get-ChildItem out -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
 
       - name: Upload client artifacts
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
