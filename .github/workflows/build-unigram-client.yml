@@ -1,9 +1,22 @@
-# Full Unigram (Telegram for Windows) build with BetterTG sources injected.
-# Heavy: vcpkg + TDLib + WinUI 3 / .NET 11. workflow_dispatch only.
+# Pure Unigram (no BetterTG inject) — bisect CI crash vs official.
+# Default: tag v13.2.4, PublishAot=true (matches official). workflow_dispatch only.
 name: Build Unigram Client (BetterTG)
 
 on:
   workflow_dispatch:
+    inputs:
+      inject_bettertg:
+        description: "Inject BetterTG sources (false = pure Unigram bisect)"
+        type: boolean
+        default: false
+      publish_aot:
+        description: "PublishAot (true = official default)"
+        type: boolean
+        default: true
+      unigram_ref:
+        description: "Unigram git ref (tag or commit)"
+        type: string
+        default: "v13.2.4"
 
 env:
   DOTNET_NOLOGO: true
@@ -26,6 +39,9 @@ jobs:
           if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_ID }}")) { throw "Missing secret TELEGRAM_API_ID" }
           if ([string]::IsNullOrWhiteSpace("${{ secrets.TELEGRAM_API_HASH }}")) { throw "Missing secret TELEGRAM_API_HASH" }
           Write-Host "API secrets present."
+          Write-Host "inject_bettertg=${{ inputs.inject_bettertg }}"
+          Write-Host "publish_aot=${{ inputs.publish_aot }}"
+          Write-Host "unigram_ref=${{ inputs.unigram_ref }}"
 
       - name: Setup MSVC / dev cmd
         uses: ilammy/msvc-dev-cmd@v1
@@ -36,23 +52,24 @@ jobs:
           php-version: '8.3'
           coverage: none
 
-      - name: Setup .NET 11 (Unigram develop TFM)
+      - name: Setup .NET 11 (Unigram TFM)
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             11.0.x
             8.0.x
 
-      - name: Clone Unigram (recursive, pinned)
+      - name: Clone Unigram (recursive, pinned ref)
         shell: pwsh
         run: |
-          # Pin away from broken develop tip (CS0117 Strings.DeleteAll*FromUsers).
-          # Commit from 2026-11-25 ~07:08, matching last successful CI window.
+          $ref = "${{ inputs.unigram_ref }}"
+          if ([string]::IsNullOrWhiteSpace($ref)) { $ref = "v13.2.4" }
           git clone https://github.com/TelegramMessenger/Unigram.git Unigram
           cd Unigram
-          git checkout da80f3492ee93f0e7e78d9462d5c258b21fcc315
+          git checkout $ref
           git submodule update --init --recursive
           Write-Host "Unigram HEAD: $(git rev-parse HEAD)"
+          Write-Host "Unigram describe: $(git describe --tags --always)"
 
       - name: Write Constants.Secret.cs
         shell: pwsh
@@ -74,258 +91,237 @@ jobs:
             '}'
           )
           Set-Content -Path "Unigram/Telegram/Constants.Secret.cs" -Value ($lines -join "`n") -Encoding UTF8
+          Write-Host "Wrote Constants.Secret.cs"
 
       - name: Inject BetterTG sources
+        if: ${{ inputs.inject_bettertg == true || inputs.inject_bettertg == 'true' }}
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File BetterTG/Windows/UnigramIntegration/Inject-BetterTG.ps1 -UnigramRoot (Resolve-Path Unigram) -BetterTGWindowsRoot (Resolve-Path BetterTG/Windows)
 
-      - name: Patch upstream string key mismatch
-        working-directory: Unigram
+      - name: Skip BetterTG inject (pure Unigram)
+        if: ${{ inputs.inject_bettertg != true && inputs.inject_bettertg != 'true' }}
         shell: pwsh
+        run: Write-Host "Pure Unigram build — BetterTG not injected (bisect mode)."
+
+      - name: Patch upstream string key mismatches
+        shell: pwsh
+        working-directory: Unigram
         run: |
-          # Upstream DeleteMessagesPopup references Strings keys that are not in Resources.xml
-          # (DeleteAllMessagesFromUsers / DeleteAllReactionsFromUsers). Map to existing keys /
-          # add placeholders so WinUI compiles. BetterTG-unrelated; pure upstream gap.
           $popup = "Telegram/Views/Popups/DeleteMessagesPopup.xaml.cs"
           if (Test-Path $popup) {
             $c = Get-Content $popup -Raw
-            $c2 = $c.Replace("Strings.DeleteAllMessagesFromUsers", "Strings.DeleteAllFromUsers")
-            $c2 = $c2.Replace("Strings.DeleteAllReactionsFromUsers", "Strings.DeleteAllFromUsers")
-            if ($c2 -ne $c) {
-              Set-Content -Path $popup -Value $c2 -Encoding UTF8
-              Write-Host "Patched $popup string keys"
+            $n = $c
+            $n = $n.Replace('Strings.DeleteAllMessagesFromUsers', 'Strings.DeleteAllFromUsers')
+            $n = $n.Replace('Strings.DeleteAllReactionsFromUsers', 'Strings.DeleteAllFromUsers')
+            if ($n -ne $c) {
+              Set-Content $popup $n -NoNewline
+              Write-Host "Patched DeleteMessagesPopup string keys"
             } else {
-              Write-Host "No string key replacements needed in popup (already aligned?)"
+              Write-Host "DeleteMessagesPopup: no DeleteAll*FromUsers mismatch (OK)"
             }
           }
-          $xml = "Telegram/Strings/en/Resources.xml"
-          if (Test-Path $xml) {
-            $x = Get-Content $xml -Raw
-            $added = $false
-            if ($x -notmatch 'name="DeleteAllMessagesFromUsers"') {
-              $x = $x.Replace("</resources>", "  <string name=`"DeleteAllMessagesFromUsers`">Delete all messages from users</string>`n</resources>")
-              $added = $true
+          $res = "Telegram/Assets/Strings/en/Resources.xml"
+          if (Test-Path $res) {
+            $c = Get-Content $res -Raw
+            $changed = $false
+            if ($c -notmatch 'name="DeleteAllMessagesFromUsers"') {
+              $c = $c -replace '(</resources>\s*)$', "  <string name=`"DeleteAllMessagesFromUsers`">Delete all messages from users</string>`r`n</resources>`r`n"
+              $changed = $true
             }
-            if ($x -notmatch 'name="DeleteAllReactionsFromUsers"') {
-              $x = $x.Replace("</resources>", "  <string name=`"DeleteAllReactionsFromUsers`">Delete all reactions from users</string>`n</resources>")
-              $added = $true
+            if ($c -notmatch 'name="DeleteAllReactionsFromUsers"') {
+              $c = $c -replace '(</resources>\s*)$', "  <string name=`"DeleteAllReactionsFromUsers`">Delete all reactions from users</string>`r`n</resources>`r`n"
+              $changed = $true
             }
-            if ($added) {
-              Set-Content -Path $xml -Value $x -Encoding UTF8
-              Write-Host "Added missing keys to Resources.xml"
+            if ($changed) {
+              Set-Content $res $c -NoNewline
+              Write-Host "Patched Resources.xml missing keys"
             }
           }
 
-      - name: Pre-build AnyCPU tools and stage to expected paths
-        working-directory: Unigram
+      - name: Pre-build AnyCPU tools (Generators + Rewriter)
         shell: pwsh
+        working-directory: Unigram
         run: |
-          function Stage-Tool($searchRoot, $dllName, $destRel) {
-            $dest = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $destRel))
-            $dir = Split-Path $dest -Parent
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            $found = Get-ChildItem -Recurse $searchRoot -Filter $dllName -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match '\\bin\\' } |
-              Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if (-not $found) { throw "$dllName not found under $searchRoot" }
-            $src = [System.IO.Path]::GetFullPath($found.FullName)
-            if ($src -ne $dest) {
-              Copy-Item $src $dest -Force
-              Write-Host "Staged $src -> $dest"
-            } else {
-              Write-Host "Already at $dest"
+          function Stage-Tool([string]$project, [string]$dllName) {
+            Write-Host "Building $project ..."
+            dotnet build $project -c Release -p:Platform=AnyCPU
+            if ($LASTEXITCODE -ne 0) { throw "Failed: $project" }
+            $name = [IO.Path]::GetFileNameWithoutExtension($project)
+            $srcRoot = Join-Path $name "bin"
+            $candidates = @(
+              (Join-Path $srcRoot "Release/net11.0/$dllName"),
+              (Join-Path $srcRoot "x64/Release/net11.0/$dllName"),
+              (Join-Path $srcRoot "Release/net8.0/$dllName")
+            ) | Where-Object { Test-Path $_ }
+            if (-not $candidates) {
+              Get-ChildItem -Recurse $srcRoot -Filter $dllName -ErrorAction SilentlyContinue | Select-Object -First 5 FullName
+              throw "DLL not found: $dllName under $srcRoot"
             }
-            Get-ChildItem $found.DirectoryName -Filter '*.dll' | ForEach-Object {
-              $d2 = Join-Path $dir $_.Name
-              $s2 = [System.IO.Path]::GetFullPath($_.FullName)
-              $d2f = [System.IO.Path]::GetFullPath($d2)
-              if ($s2 -ne $d2f) { Copy-Item $s2 $d2f -Force }
+            $src = $candidates[0]
+            foreach ($destRoot in @("bin/Release/net11.0", "bin/x64/Release/net11.0")) {
+              New-Item -ItemType Directory -Force -Path $destRoot | Out-Null
+              $dest = Join-Path $destRoot $dllName
+              $srcFull = [IO.Path]::GetFullPath($src)
+              $destFull = [IO.Path]::GetFullPath($dest)
+              if ($srcFull -ne $destFull) {
+                Copy-Item $src $dest -Force
+                Write-Host "Staged $dest"
+              } else {
+                Write-Host "Already at $dest"
+              }
             }
           }
-          dotnet build Telegram.WinUI.Rewriter\Telegram.WinUI.Rewriter.csproj -c Release -p:Platform=AnyCPU -v:minimal
-          dotnet build Telegram.Generators.Cli\Telegram.Generators.Cli.csproj -c Release -p:Platform=AnyCPU -v:minimal
-          Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll
-          Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll
-          Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.dll
-          # mirror to x64 path used when Platform leaks
-          Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\x64\Release\net11.0\Telegram.WinUI.Rewriter.dll
-          Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.Cli.dll
-          Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.dll
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+          Stage-Tool "Telegram.WinUI.Rewriter/Telegram.WinUI.Rewriter.csproj" "Telegram.WinUI.Rewriter.dll"
+          Stage-Tool "Telegram.Generators.Cli/Telegram.Generators.Cli.csproj" "Telegram.Generators.Cli.dll"
 
       - name: Build TDLib (x64 windows)
-        working-directory: Unigram/Libraries/tdjson
         shell: pwsh
-        run: |
-          if (-not (Test-Path .\build.ps1)) { throw "tdjson/build.ps1 missing" }
-          powershell -ExecutionPolicy Bypass ./build.ps1 -arch x64 -target windows
-          $tl = Join-Path (Get-Location) "td_api.tl"
-          if (-not (Test-Path $tl)) {
-            $found = Get-ChildItem -Recurse -Filter "td_api.tl" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { Copy-Item $found.FullName $tl -Force; Write-Host "Copied td_api.tl from $($found.FullName)" }
-            else { Write-Host "WARNING: td_api.tl missing" }
-          } else { Write-Host "td_api.tl present ($((Get-Item $tl).Length) bytes)"
-          $winDir = Join-Path (Get-Location) "x64-windows"
-          if (-not (Test-Path (Join-Path $winDir "tdjson.dll"))) {
-            Write-Host "Listing Libraries/tdjson after build:"
-            Get-ChildItem -Recurse (Get-Location) -Filter "tdjson.dll" -ErrorAction SilentlyContinue | Select-Object FullName
-            throw "x64-windows/tdjson.dll missing after TDLib build (need -target windows)"
-          }
-          Write-Host "x64-windows TDLib OK:"; Get-ChildItem $winDir | Format-Table Name, Length }
-
-      - name: Re-stage build tools after TDLib
         working-directory: Unigram
-        shell: pwsh
         run: |
-          function Stage-Tool($searchRoot, $dllName, $destRel) {
-            $dest = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $destRel))
-            $dir = Split-Path $dest -Parent
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            $found = Get-ChildItem -Recurse $searchRoot -Filter $dllName -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match '\\bin\\' } |
+          ./Libraries/build.ps1 -arch x64 -target windows
+          $td = "Libraries/tdjson/x64-windows/tdjson.dll"
+          if (-not (Test-Path $td)) { throw "Missing $td after TDLib build" }
+          Write-Host "x64-windows TDLib OK:"
+          Get-ChildItem "Libraries/tdjson/x64-windows" | Format-Table Name, Length
+
+      - name: Re-stage tools after TDLib
+        shell: pwsh
+        working-directory: Unigram
+        run: |
+          foreach ($pair in @(
+            @("Telegram.WinUI.Rewriter", "Telegram.WinUI.Rewriter.dll"),
+            @("Telegram.Generators.Cli", "Telegram.Generators.Cli.dll")
+          )) {
+            $name = $pair[0]; $dll = $pair[1]
+            $src = Get-ChildItem -Recurse "$name/bin" -Filter $dll -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if (-not $found) { Write-Host "WARN: $dllName missing under $searchRoot"; return }
-            $src = [System.IO.Path]::GetFullPath($found.FullName)
-            if ($src -ne $dest) { Copy-Item $src $dest -Force; Write-Host "Staged $src -> $dest" }
-            else { Write-Host "Already at $dest" }
-            Get-ChildItem $found.DirectoryName -Filter '*.dll' | ForEach-Object {
-              $d2 = [System.IO.Path]::GetFullPath((Join-Path $dir $_.Name))
-              $s2 = [System.IO.Path]::GetFullPath($_.FullName)
-              if ($s2 -ne $d2) { Copy-Item $s2 $d2 -Force }
+            if (-not $src) { Write-Host "WARN: no $dll"; continue }
+            foreach ($destRoot in @("bin/Release/net11.0", "bin/x64/Release/net11.0")) {
+              New-Item -ItemType Directory -Force -Path $destRoot | Out-Null
+              $dest = Join-Path $destRoot $dll
+              if ([IO.Path]::GetFullPath($src.FullName) -ne [IO.Path]::GetFullPath($dest)) {
+                Copy-Item $src.FullName $dest -Force
+              }
             }
+            Write-Host "Re-staged $dll"
           }
-          Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\Release\net11.0\Telegram.WinUI.Rewriter.dll
-          Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.Cli.dll
-          Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\Release\net11.0\Telegram.Generators.dll
-          Stage-Tool Telegram.WinUI.Rewriter Telegram.WinUI.Rewriter.dll Telegram.WinUI.Rewriter\bin\x64\Release\net11.0\Telegram.WinUI.Rewriter.dll
-          Stage-Tool Telegram.Generators.Cli Telegram.Generators.Cli.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.Cli.dll
-          Stage-Tool Telegram.Generators Telegram.Generators.dll Telegram.Generators.Cli\bin\x64\Release\net11.0\Telegram.Generators.dll
 
-      - name: Make optional native binaries non-fatal
-        working-directory: Unigram
+      - name: Gate optional wallet_engine.dll
         shell: pwsh
+        working-directory: Unigram
         run: |
-          # wallet-engine is not in the public Unigram tree (private/prebuilt). Without it
-          # MSB3030 fails the publish. Gate Content items on Exists().
-          $files = @(
-            "Telegram\Telegram.WinUI.csproj",
-            "Telegram\Telegram.csproj",
-            "Telegram\Telegram.Modern.csproj"
-          )
-          foreach ($f in $files) {
-            if (-not (Test-Path $f)) { continue }
+          Get-ChildItem -Recurse -Filter "*.csproj" | ForEach-Object {
+            $f = $_.FullName
             $c = Get-Content $f -Raw
-            $orig = $c
-            # Add Condition=Exists if not already present on wallet_engine line
-            $c = [regex]::Replace($c,
-              '(<Content Include="\$\(TelegramRoot\)Libraries\\wallet-engine\\\$\(Platform\)\\wallet_engine\.dll"[^/]*?)(\s*/>)',
-              {
-                param($m)
-                if ($m.Groups[1].Value -match 'Condition=') { return $m.Value }
-                return $m.Groups[1].Value + ' Condition="Exists(''$(TelegramRoot)Libraries\wallet-engine\$(Platform)\wallet_engine.dll'')"' + $m.Groups[2].Value
-              })
-            if ($c -ne $orig) {
-              Set-Content -Path $f -Value $c -Encoding UTF8
-              Write-Host "Patched wallet_engine Exists() in $f"
-            } else {
-              Write-Host "No change or already conditioned: $f"
+            if ($c -match 'wallet_engine\.dll' -and $c -notmatch 'wallet_engine\.dll.*Exists') {
+              $n = [regex]::Replace(
+                $c,
+                '(<Content Include="\$\(TelegramRoot\)Libraries\\wallet-engine\\\$\(Platform\)\\wallet_engine\.dll"[^/]*?)(\s*/>)',
+                {
+                  param($m)
+                  if ($m.Value -match 'Condition=') { return $m.Value }
+                  return $m.Groups[1].Value + ' Condition="Exists(''$(TelegramRoot)Libraries\wallet-engine\$(Platform)\wallet_engine.dll'')"' + $m.Groups[2].Value
+                }
+              )
+              if ($n -ne $c) {
+                Set-Content $f $n -NoNewline
+                Write-Host "Patched wallet_engine Exists() in $f"
+              }
             }
           }
-          # Placeholder dir so paths resolve cleanly
           New-Item -ItemType Directory -Force -Path "Libraries\wallet-engine\x64" | Out-Null
-          if (-not (Test-Path "Libraries\wallet-engine\x64\wallet_engine.dll")) {
-            Write-Host "wallet_engine.dll absent (expected for public clone); Content gated."
-          }
+          Write-Host "wallet_engine gated."
 
-      - name: Disable NativeAOT + soften PDB packaging (non-AOT)
-        working-directory: Unigram
+      - name: Configure PublishAot
         shell: pwsh
+        working-directory: Unigram
         run: |
-          # Official Unigram works on reporter's PC; AOT unpackaged crashed in ucrtbase (0xC0000005).
-          $csproj = "Telegram\Telegram.WinUI.csproj"
+          $wantAot = "${{ inputs.publish_aot }}"
+          $aotTrue = ($wantAot -eq "true" -or $wantAot -eq "True" -or $wantAot -eq $true)
+          $csproj = "Telegram/Telegram.WinUI.csproj"
           $c = Get-Content $csproj -Raw
-          $old = '<PublishAot Condition="''$(Configuration)'' != ''Debug''">true</PublishAot>'
-          $new = '<PublishAot>false</PublishAot>'
-          if ($c.Contains($old)) {
-            $c = $c.Replace($old, $new)
-            Write-Host "Replaced PublishAot condition with false"
-          } elseif ($c -match 'PublishAot') {
-            $c = [regex]::Replace($c, '<PublishAot[^>]*>\s*true\s*</PublishAot>', '<PublishAot>false</PublishAot>')
-            Write-Host "Regex-forced PublishAot false"
+          if ($aotTrue) {
+            Write-Host "Keeping/restoring PublishAot=true (official default)"
+            # Ensure true for Release
+            if ($c -match '<PublishAot>false</PublishAot>') {
+              $c = $c.Replace('<PublishAot>false</PublishAot>', '<PublishAot Condition=''$(Configuration)'' != ''Debug''>true</PublishAot>')
+              Set-Content $csproj $c -NoNewline
+            }
           } else {
-            $c = $c.Replace('<PropertyGroup>', "<PropertyGroup>`r`n    <PublishAot>false</PublishAot>", 1)
-            Write-Host "Inserted PublishAot false into first PropertyGroup"
+            Write-Host "Forcing PublishAot=false"
+            $old = '<PublishAot Condition=''$(Configuration)'' != ''Debug''>true</PublishAot>'
+            if ($c.Contains($old)) {
+              $c = $c.Replace($old, '<PublishAot>false</PublishAot>')
+            } else {
+              $c = [regex]::Replace($c, '<PublishAot[^>]*>\s*true\s*</PublishAot>', '<PublishAot>false</PublishAot>')
+            }
+            Set-Content $csproj $c -NoNewline
           }
-          Set-Content -Path $csproj -Value $c -Encoding UTF8
           Select-String -Path $csproj -Pattern 'PublishAot' | ForEach-Object { $_.Line.Trim() }
 
-          $ps1 = "Build.WinUI.ps1"
-          $p = Get-Content $ps1 -Raw
-          $needle = "'-p:Unpackaged=true',"
-          $insert = "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',"
-          if ($p.Contains($needle) -and -not $p.Contains("PublishAot=false")) {
-            $p = $p.Replace($needle, $insert)
-            Write-Host "Build.WinUI.ps1: added -p:PublishAot=false"
+          $ps1 = "Telegram/Build.WinUI.ps1"
+          if (Test-Path $ps1) {
+            $p = Get-Content $ps1 -Raw
+            if (-not $aotTrue) {
+              $needle = "'-p:Unpackaged=true',"
+              $insert = "'-p:Unpackaged=true',`r`n          '-p:PublishAot=false',"
+              if ($p.Contains($needle) -and -not $p.Contains("PublishAot=false")) {
+                $p = $p.Replace($needle, $insert)
+                Set-Content $ps1 $p -NoNewline
+                Write-Host "Build.WinUI.ps1: added -p:PublishAot=false"
+              }
+            }
+            # Soften PDB check so non-AOT/AOT layout differences do not fail the job after zip exists
+            if ($p -match 'No PDB matching') {
+              $p2 = [regex]::Replace($p, 'throw\s+"No PDB matching[^"]*"', 'Write-Warning "No PDB matching Telegram.dll (non-fatal)"')
+              if ($p2 -ne $p) {
+                Set-Content $ps1 $p2 -NoNewline
+                Write-Host "Build.WinUI.ps1: PDB mismatch is non-fatal"
+              }
+            }
           }
-          # Non-AOT: symbols step throws "No PDB matching Telegram.dll" after zip is already written.
-          # Demote to warning so the unpackaged zip/publish survive.
-          if ($p.Contains('throw "No PDB matching')) {
-            $p = $p.Replace('throw "No PDB matching', 'Write-Warning "No PDB matching')
-            Write-Host "Build.WinUI.ps1: PDB mismatch is warning only"
-          }
-          Set-Content -Path $ps1 -Value $p -Encoding UTF8
 
-      - name: Build Unigram WinUI unpackaged (Release x64)
-        working-directory: Unigram
+      - name: Build Unigram WinUI unpackaged
         shell: pwsh
+        working-directory: Unigram
         run: |
-          if (-not (Test-Path .\Build.WinUI.ps1)) { throw "Build.WinUI.ps1 missing" }
-          powershell -ExecutionPolicy Bypass -File .\Build.WinUI.ps1 -Configuration Release -Platform x64 -Unpackaged
+          ./Telegram/Build.WinUI.ps1 -Configuration Release -Platform x64 -Unpackaged
 
       - name: Collect output
         if: success() || failure()
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          # Build.WinUI.ps1 -Unpackaged already creates the correct package:
-          #   Telegram/bin/winui-unpackaged/x64/Release/Telegram-*-x64.zip  (contains payload/)
-          #   Telegram/bin/winui-unpackaged/x64/Release/publish/Telegram.exe + deps
-          # Do NOT recurse every nested publish dir or copy bare Telegram.exe stubs.
           $zip = Get-ChildItem -Path "Unigram/Telegram/bin/winui-unpackaged" -Recurse -Filter "Telegram-*-x64.zip" -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if ($zip) {
             Copy-Item $zip.FullName "out/$($zip.Name)" -Force
             Write-Host "Official zip: $($zip.FullName) ($([math]::Round($zip.Length/1MB,1)) MB)"
           } else {
-            Write-Host "WARNING: Telegram-*-x64.zip not found under winui-unpackaged"
+            Write-Host "WARNING: Telegram-*-x64.zip not found"
           }
           $pub = "Unigram/Telegram/bin/winui-unpackaged/x64/Release/publish"
           if (Test-Path (Join-Path $pub "Telegram.exe")) {
             $len = (Get-Item (Join-Path $pub "Telegram.exe")).Length
             Write-Host "Publish folder OK ($([math]::Round($len/1MB,1)) MB Telegram.exe)"
             Compress-Archive -Path "$pub/*" -DestinationPath "out/Telegram-publish-folder-x64.zip" -Force
-            Write-Host "Wrote out/Telegram-publish-folder-x64.zip"
-          } else {
-            Write-Host "WARNING: missing $pub/Telegram.exe"
-            Get-ChildItem -Recurse "Unigram/Telegram/bin/winui-unpackaged" -ErrorAction SilentlyContinue |
-              Select-Object -First 50 FullName
           }
-          # Official installer (if Inno Setup ran)
           Get-ChildItem -Path "Unigram/Telegram/bin/winui-unpackaged" -Recurse -Filter "Telegram-*-setup.exe" -ErrorAction SilentlyContinue |
             ForEach-Object {
               Copy-Item $_.FullName "out/$($_.Name)" -Force
               Write-Host "Setup: $($_.Name) ($([math]::Round($_.Length/1MB,1)) MB)"
             }
-          Get-ChildItem out -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
+          "inject=${{ inputs.inject_bettertg }}" | Out-File out/build-meta.txt -Encoding utf8
+          "aot=${{ inputs.publish_aot }}" | Out-File out/build-meta.txt -Append -Encoding utf8
+          "ref=${{ inputs.unigram_ref }}" | Out-File out/build-meta.txt -Append -Encoding utf8
+          Get-ChildItem out | Format-Table Name, Length -AutoSize
 
       - name: Upload client artifacts
         if: success() || failure()
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: Unigram-BetterTG-client
+          name: Unigram-client-${{ inputs.inject_bettertg && 'bettertg' || 'pure' }}-aot${{ inputs.publish_aot }}
           path: out/**
           if-no-files-found: warn
